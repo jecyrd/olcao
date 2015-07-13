@@ -1,2 +1,2 @@
 SUBDIRS = makeKPoints atomSCF gaussFit contract applySpaceGroup olcao \
-scripts data
+scripts data polcao debug-tools

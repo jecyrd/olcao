@@ -121,7 +121,15 @@ dnl fi
 AC_SUBST(CPP)
 dnl AC_SUBST(CPPFLAGS)
 
-
+dnl ######################################################################
+dnl
+dnl Allow the user to specify whether to enable compilation of polcao
+dnl
+dnl ######################################################################
+dnl AC_ARG_ENABLE([parallel],
+dnl               [AS_HELP_STRING[--enable-parallel],
+dnl                              [Compile pOLCAO executables])
+dnl  PARALLEL=yes
 
 dnl ######################################################################
 dnl
@@ -133,9 +141,8 @@ AC_CONFIG_FILES([Makefile src/Makefile src/makeKPoints/Makefile \
    src/atomSCF/Makefile src/gaussFit/Makefile src/contract/Makefile \
    src/applySpaceGroup/Makefile src/olcao/Makefile src/olcao/real/Makefile \
    src/olcao/complex/Makefile src/olcao/auxiliary/Makefile \
-   src/scripts/Makefile src/data/Makefile])
-dnl   src/scripts/Makefile src/data/Makefile src/polcao/Makefile \
-dnl   src/polcao/complex/Makefile src/debug-tools/Makefile \
-dnl   src/debug-tools/parSerComp/Makefile])
+   src/scripts/Makefile src/data/Makefile \
+   src/polcao/Makefile src/polcao/complex/Makefile \
+   src/debug-tools/Makefile src/debug-tools/parSerComp/Makefile])
 
 AC_OUTPUT

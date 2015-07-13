@@ -1,0 +1,5 @@
+# Git ignore for after build and install
+.configure.ac.swp
+bin/
+distrib/src/
+share

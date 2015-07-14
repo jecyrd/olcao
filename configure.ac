@@ -1,5 +1,5 @@
 AC_INIT([OLCAO],[0.6],[rulisp@umkc.edu])
-AM_INIT_AUTOMAKE([-Wall -Werror foreign])
+AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 
 
 dnl Link to the appropriate library.  The dtsevx and zherk are just test cases
@@ -21,9 +21,9 @@ dnl ######################################################################
 
 dnl ######################################################################
 dnl
-dnl File:	hdf5.m4
+dnl File:       hdf5.m4
 dnl
-dnl Purpose:	Determine the locations of hdf5 includes and libraries
+dnl Purpose:    Determine the locations of hdf5 includes and libraries
 dnl
 dnl Version: $Id: hdf5.m4,v 1.26 2003/09/15 20:36:26 cary Exp $
 dnl
@@ -121,15 +121,7 @@ dnl fi
 AC_SUBST(CPP)
 dnl AC_SUBST(CPPFLAGS)
 
-dnl ######################################################################
-dnl
-dnl Allow the user to specify whether to enable compilation of polcao
-dnl
-dnl ######################################################################
-dnl AC_ARG_ENABLE([parallel],
-dnl               [AS_HELP_STRING[--enable-parallel],
-dnl                              [Compile pOLCAO executables])
-dnl  PARALLEL=yes
+
 
 dnl ######################################################################
 dnl
@@ -137,12 +129,5 @@ dnl All Done!   Output the results.
 dnl
 dnl ######################################################################
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([Makefile src/Makefile src/makeKPoints/Makefile \
-   src/atomSCF/Makefile src/gaussFit/Makefile src/contract/Makefile \
-   src/applySpaceGroup/Makefile src/olcao/Makefile src/olcao/real/Makefile \
-   src/olcao/complex/Makefile src/olcao/auxiliary/Makefile \
-   src/scripts/Makefile src/data/Makefile \
-   src/polcao/Makefile src/polcao/complex/Makefile \
-   src/debug-tools/Makefile src/debug-tools/parSerComp/Makefile])
-
+AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

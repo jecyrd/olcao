@@ -14,6 +14,8 @@ program gaBlockCyclic
   integer :: valeDim
   integer :: gaStat
 
+  integer :: i,j, cnt
+
   double complex, dimension(2,2) :: a,s,b,evals
 
   valeDim = 1200
@@ -39,19 +41,26 @@ program gaBlockCyclic
 
   ! set data properties
   call ga_set_data(ga_a, 2, &
-    & (/20,20/), MT_F_DCPL)
+    & (/9,9/), MT_F_DCPL)
   call ga_set_data(ga_s, 2, &
-    & (/20,20/), MT_F_DCPL)
+    & (/9,9/), MT_F_DCPL)
   call ga_set_data(ga_b, 2, &
-    & (/20,20/), MT_F_DCPL)
+    & (/9,9/), MT_F_DCPL)
  
   ! allocate global array
   gastat = ga_allocate(ga_a)
   gastat = ga_allocate(ga_s)
   gastat = ga_allocate(ga_b)
 
-  call ga_fill(ga_a,cmplx(1.0d0,0.0d0))
-  call ga_fill(ga_b,cmplx(0.0d0,0.0d0))
+  !call ga_fill(ga_a,cmplx(1.0d0,0.0d0))
+  !call ga_fill(ga_b,cmplx(0.0d0,0.0d0))
+  cnt = 1
+  do i=1,9
+    do j=1,9
+      call ga_put(ga_a, i,i,j,j, cnt, 1)
+      cnt = cnt + 1
+    enddo
+  enddo
 
 !  call ga_print(ga_a)
 !  print *, "filled"
@@ -61,7 +70,7 @@ program gaBlockCyclic
 !  call ga_zgemm('N','N', valeDim,valeDim,valeDim,1.0d0,ga_vc,ga_cc,1.0d0,ga_vc)
 !  print *, "mult"
 !  call ga_diag_std(ga_a,ga_b,b)
-  call oga_pdzhegv(ga_a, ga_b, evals, 20)
+  call oga_pdzhegv(ga_a, ga_b, evals, 9)
 
   print *, b
   print *, ''

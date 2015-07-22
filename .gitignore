@@ -3,3 +3,9 @@
 bin/
 distrib/src/
 share
+# Git ignore for my testing stuff that changes a lot
+src/polcao/test/gaBlockCyclic.o
+src/polcao/test/kinds.o
+src/polcao/test/o_kinds.mod
+src/polcao/test/o_slsubs.mod
+src/polcao/test/slSubs.o

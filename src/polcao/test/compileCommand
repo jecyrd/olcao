@@ -1,3 +1,4 @@
 #!/bin/bash
 
-h5pfc -g kinds.f90 ../slSubs.F90 gaBlockCyclic.F90 -lga -larmci -mkl=cluster
+mpif90 -g kinds.f90 ../slSubs.F90 gaBlockCyclic.F90 -lga -larmci -mkl=cluster
+

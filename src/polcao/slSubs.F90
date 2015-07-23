@@ -33,7 +33,7 @@ module O_SlSubs
 ! to extract data from the global array in such away to fit our grid
 ! using the 2d block cyclic mapping specified in the SCALAPACK
 ! documentation on netlib. http://netlib.org/scalapack/slug/node76.html
-subroutine oga_tosl(ga_arr, local, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim)
+subroutine oga_tosl(ga_arr, local, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim, firstGlobal)
   use MPI
   use O_Kinds
 
@@ -51,6 +51,7 @@ subroutine oga_tosl(ga_arr, local, valeDim, gridDim, numprocs, myinfo, blkFact, 
   integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
   integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
   integer, dimension(2), intent(in) :: trailDim
+  integer, dimension(2), intent(out) :: firstGlobal
 
   ! Define local Variables
   integer :: l,m
@@ -64,20 +65,10 @@ subroutine oga_tosl(ga_arr, local, valeDim, gridDim, numprocs, myinfo, blkFact, 
   ! External subroutine
   integer, external ::  numroc
 
-  ! Remove later
-  integer, dimension(:), allocatable :: lTrack
-  integer, dimension(:), allocatable :: mTrack
-  integer, dimension(:), allocatable :: rloTrack 
-  integer, dimension(:), allocatable :: cloTrack 
-  integer, dimension(:), allocatable :: rhiTrack 
-  integer, dimension(:), allocatable :: chiTrack 
-  integer :: cnt
-
   ! Use numroc to determine the number of rows and columns needed by the
   ! distributed array.
   nrows = numroc(valeDim, blkFact(1), myInfo(1), 0, gridDim(1))
   ncols = numroc(valeDim, blkFact(2), myInfo(2), 0, gridDim(2))
-
 
   allocate(local(nrows,ncols))
   
@@ -94,24 +85,6 @@ subroutine oga_tosl(ga_arr, local, valeDim, gridDim, numprocs, myinfo, blkFact, 
   if ( mod(ncols,blkFact(2)) /= 0 ) then
     nbcol = nbcol + 1
   endif
-
-  allocate(lTrack(nbrow*nbcol))
-  allocate(mTrack(nbrow*nbcol))
-  allocate(rloTrack(nbrow*nbcol))
-  allocate(cloTrack(nbrow*nbcol))
-  allocate(rhiTrack(nbrow*nbcol))
-  allocate(chiTrack(nbrow*nbcol))
-  lTrack(:) = -1
-  mTrack(:) = -1
-  rloTrack(:) = -1
-  cloTrack(:) = -1
-  rhiTrack(:) = -1
-  chiTrack(:) = -1
-
-  !print *, myInfo(3), "MyInfo: ", myInfo(1), myInfo(2), trailDim
-  !print *, myInfo(3), "Rows and Cols: ", nrows, ncols
-  !print *, myInfo(3), "!!BRows and BCols: ", nbrow, nbcol
-
 
   ! Using the equations in the documentation linked above, we can obtain
   ! the following set of equations.
@@ -133,16 +106,6 @@ subroutine oga_tosl(ga_arr, local, valeDim, gridDim, numprocs, myinfo, blkFact, 
   ! off of a 0 index. Hi should calculate correctly.
   !
   ! A special case has to be considered for edge blocks of irregular size.
-  call ga_sync()
-  do ld = 0, 5
-    if (ld==myInfo(3)) then
-      print *, myInfo(3), "Nbrow,nbCol: ", nbrow, nbcol
-      print *, ""
-    endif
-    call ga_sync()
-  enddo
-
-  cnt = 1
   do i=1,nbrow
     do j=1,nbcol
       l = i-1
@@ -205,37 +168,17 @@ subroutine oga_tosl(ga_arr, local, valeDim, gridDim, numprocs, myinfo, blkFact, 
       ! Set ld
       ld = (aend - a) + 1
 
-!      lTrack(cnt) = l
-!      mTrack(cnt) = m
-!      rloTrack(cnt) = lo(1)
-!      cloTrack(cnt) = lo(2)
-!      rhiTrack(cnt) = hi(1)
-!      chiTrack(cnt) = hi(2)
-!      cnt = cnt + 1
       ! Get data from global array, storing it into local array at location
       ! a : (a + blkFact(1)), and b : (b + blkFact(2))
       call ga_get(ga_arr,lo(1),hi(1),lo(2),hi(2), &
         & local( a:aend, b:bend ), &
         & ld)
+      if ( (i==1) .and. (j==1) ) then
+        firstGlobal(1) = lo(1)
+        firstGlobal(2) = lo(2)
+      endif
     enddo
   enddo
-
-
-!  do ld=0, 5
-!    call ga_sync()
-!    if (ld==myInfo(3)) then
-!      print *, myInfo(3), "pr,pc: ",  myInfo(1), myInfo(2) 
-!      print *, "    l: ",  lTrack
-!      print *, "    m: ",  mTrack
-!      print *, "  rlo: ", rloTrack
-!      print *, "  clo: ", cloTrack
-!      print *, "  rhi: ", rhiTrack
-!      print *, "  chi: ", chiTrack
-!      print *, ""
-!    endif
-!  enddo
-!  call ga_sync()
-!  stop
 
   ! We should now have the global data in the proper local configuration
   ! for the grid size defined.
@@ -368,7 +311,7 @@ end subroutine getTrailDim
 
 ! This subroutine servers as the main wrapper to the zhegvx lapack
 ! routine.
-subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
+subroutine oga_pzhegv(ga_a, ga_b, ga_z, eigenVals, valeDim)
   use MPI
   use O_Kinds
 
@@ -380,6 +323,8 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
   ! Define passed parameters
   integer, intent(inout) :: ga_a ! Global Array holding Matrix A
   integer, intent(inout) :: ga_b ! Global Array holding Matrix B
+  integer, intent(inout) :: ga_z ! Global Array holding Matrix Z
+
   ! Place to store eigenValues
   complex (kind=double), intent(out), dimension(:,:) :: eigenVals
   integer, intent(in) :: valeDim
@@ -398,13 +343,16 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
   integer :: slctxt
   integer, dimension(9) :: desca, descb, descz
 
-  ! Allocate Scalapack parameters to calculate for the zhegvx call
-! information on netlib.
+  ! Allocate Scalapack parameters to calculate for the pzhegvx call
+  ! information on netlib.
   integer :: IBTYPE, N, IA, JA, IB, JB, VL, VU, IL, IU 
-  integer :: ABSTOL, M, NZ, W, ORFAC, IZ, JZ
+  integer :: ABSTOL, M, NZ, ORFAC, IZ, JZ
+  real (kind=double), allocatable, dimension(:) :: W
   integer :: LWORK, LRWORK, LIWORK
   integer :: IFAIL, ICLUSTR, GAP, INFO
-  integer, allocatable, dimension(:) :: WORK, RWORK, IWORK
+  complex (kind=double), allocatable, dimension(:) :: WORK
+  real (kind=double), allocatable, dimension(:) :: RWORK
+  integer, allocatable, dimension(:) ::  IWORK
   CHARACTER :: JOBZ, RNGE, UPLO
 
   ! Define information arrays that store important information
@@ -420,10 +368,19 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
   ! column coordinate they belong to in the process grid. myInfo(3) is
   ! the MPI rank of the process.
   integer, dimension(3) :: myinfo
+  ! This holds the first global indices of positions (1,1) in the local
+  ! array
+  integer, dimension(2) :: firstGlobalA
+  integer, dimension(2) :: firstGlobalB
+  integer, dimension(2) :: firstGlobalZ
+
+  ! Zrows and zcols for numroc
+  integer :: zrows, zcols
 
   ! Define external functions
   real (kind=double) :: PDLAMCH
-  external :: PDLAMCH
+  external :: PDLAMCH, PZHEGVX
+  integer, external :: numroc
 
   ! Get environment parameters
   myInfo(3) = ga_nodeid()
@@ -449,8 +406,6 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
     call ga_error('oga_pzhegv: size of matrix A and B differ ',0)
   endif
 
-  ! Sync proccesses
-  call ga_sync()
 
   ! Determine the grid size and blocking factors we will use
   call gridCalc(myInfo, numprocs, gridDim, valeDim, blkFact)
@@ -460,7 +415,7 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
   call BLACS_GET(-1,0, slctxt)
   call BLACS_GRIDINIT(slctxt, 'r', gridDim(1), gridDim(2))
   call BLACS_GRIDINFO(slctxt, gridDim(1), gridDim(2), myInfo(1), myInfo(2))
-
+  
   ! Determine the trailing dimensions, which has to be done after
   ! gridCalc and gridInit.
   call getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
@@ -470,34 +425,40 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
   !!!!!!!!!!!!! This condition should not evaluate to true as long as the
   !!!!!!!!!!!!! naive processor grid creation is still in place.
   if (myInfo(1) == -1) then
+    print *, "SOMETHING WEIRD!"
     call ga_sync()
     return
   endif
 
   ! Pull down data from global arrays to local arrays
-  print *, 'OGA 1'
-  call flush(6)
-  call oga_tosl(ga_a, localA, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim)
-  print *, 'OGA 2'
-  call flush(6)
-  call oga_tosl(ga_b, localB, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim)
+  !print *, 'OGA 1'
+  !call flush(6)
+  call oga_tosl(ga_a, localA, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim, firstGlobalA)
+  !print *, 'OGA 2'
+  !call flush(6)
+  call oga_tosl(ga_b, localB, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim, firstGlobalB)
+  
+  call oga_tosl(ga_z, localZ, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim, firstGlobalz)
   print *, 'Done with pull'
   call flush(6)
 
-  ! Setup array Z to store the eigenValues. For now we'll try to get
-  ! by without reorthogonalizing any eigenvectors and should keep
-  ! this from being referenced
-  allocate(localZ(1,1))
-
   ! Create Array Descriptors
-  call descinit(desca, adim1, adim2, blkFact(1), blkFact(2),  & 
-    & 0, 0, slctxt, size(localA,2), info)
-
   call ga_sync()
-  call descinit(descb, bdim1, bdim2, blkFact(1), blkFact(2),  & 
-    & 0, 0, slctxt, size(localB,2), info)
+  print *, "1", myInfo(3), size(localA,1), size(localA,2)
+  call ga_sync()
+  call descinit(desca, Adim1, Adim2, blkFact(1), blkFact(2),  & 
+    & 0, 0, slctxt, size(localA,1), info)
+
+  print *, "2", myInfo(3), size(localB,1), size(localB,2)
+  call ga_sync()
+  call descinit(descb, Bdim1, Bdim2, blkFact(1), blkFact(2),  & 
+    & 0, 0, slctxt, size(localB,1), info)
+
+  print *, "3", myInfo(3), size(localZ,1), size(localZ,2)
+  call ga_sync()
   ! Create array descriptor for eigenVector storage
-  call descinit(descz, 0,0,1,1,0,0, slctxt, 1, info)
+  call descinit(descz, Adim1, Adim2, blkFact(1),blkFact(2),0,0, &
+    & slctxt, size(localZ,1), info)
 
   ! Determine other SCALAPACK info defined in the pzhegvx documentation
   ! on netlib.
@@ -505,14 +466,14 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
   IBTYPE = 1
   JOBZ = 'V'
   RNGE = 'A'
-  UPLO = 'U'
+  UPLO = 'L'
   N = Adim1
 
   ! Row and column indices of the locals first column/row in the globals
-  IA = myinfo(1) * blkFact(1) 
-  JA = myinfo(2) * blkFact(2)
-  IB = IB 
-  JB = JB
+  IA = 1!firstGlobalA(1)
+  JA = 1!firstGlobalA(2)
+  IB = 1!firstGlobalB(1) 
+  JB = 1!firstGlobalB(2) 
 
   ! These not referenced if RNGE = 'A'
   VL = 0
@@ -524,11 +485,16 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
   ! Specifying it the way it is below is the most accurate eigenvalue
   ! convergence.
   ABSTOL = 2 * PDLAMCH(slctxt,'S')
+  print *, myInfo(3), "abs: ", abstol
 
   ! Global outputs, just initializing to 0
   M = 0
   NZ = 0
-  W = 0
+
+  ! Allocate space for eigenvectors and initialize
+  allocate(W(valeDim))
+  W(:) = 0.0_double
+
 
   ! Specifies which eigenvectors should be reorthoganalized. For now
   ! we will specify that none of the eigenvectors should be
@@ -536,12 +502,8 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
   ORFAC = 0
 
   ! Row and column indices of the locals first column to the globals
-  !IZ = 0
-  !JZ = 0
-  IZ = (myinfo(1) * blkFact(1))+1
-  JZ = (myinfo(2) * blkFact(2))+1
-  print *, 'tingy: ', myinfo(3), IZ, JZ
-  call flush(6)
+  IZ = 1!firstGlobalZ(1)
+  JZ = 1!firstGlobalZ(2)
 
   ! Instead of trying to understand the appropriate size of the WORK
   ! arrays we will call PZHEGVX with LWORK, LRWORK, and LIWORK specified
@@ -566,22 +528,30 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
   GAP = 0
   INFO = 0
   
-  print *, 'lapack 1'
+
+  
   call flush(6)
   call ga_sync()
+  print *, myinfo(3), 'lapack 1'
+  call ga_sync()
   ! As stated above we call the PZHEGVX subroutine as a workspace query
+!  call PZHEEV(JOBZ, UPLO, N, localA, IA, JA, DESCA, W, localZ, IZ, JZ, DESCZ, WORK, &
+!    & LWORK, RWORK, LRWORK, INFO)
   call PZHEGVX(IBTYPE, JOBZ, RNGE, UPLO, N, localA, IA, JA, DESCA, localB, &
     & IB, JB, DESCB, VL, VU, IL, IU, ABSTOL, M, NZ, W, ORFAC, localZ, &
     & IZ, JZ, DESCZ, WORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, IFAIL, &
     & ICLUSTR, GAP, INFO)
 
-  stop
-
+  print *, myinfo(3), 'lapack 1'
+  call ga_sync()
+ 
   ! Now we set the proper workspace parameters as needed. And resize
   ! the arrays.
-  LWORK = WORK(1)
-  LRWORK = RWORK(1)
-  LIWORK = IWORK(1)
+  print *, myInfo(3), "Workspace Query: ", work(1), rwork(1), iwork(1)
+  LWORK =   WORK(1)
+  LRWORK =  RWORK(1)
+  LIWORK =  IWORK(1)
+  call ga_sync()
 
   deallocate(WORK)
   deallocate(RWORK)
@@ -595,12 +565,15 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
 
   print *, 'lapack 2'
   call flush(6)
+  call ga_sync()
   ! Now we we have sufficient workspace for scalapack and can now 
   ! call PZHEGVX to actually solve our eigen problem.
-  call PZHEGVX(IBTYPE, 'V', 'A', 'U', N, localA, IA, JA, DESCA, localB, &
+  call PZHEGVX(IBTYPE, JOBZ, RNGE, UPLO, N, localA, IA, JA, DESCA, localB, &
     & IB, JB, DESCB, VL, VU, IL, IU, ABSTOL, M, NZ, W, ORFAC, localZ, &
     & IZ, JZ, DESCZ, WORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, IFAIL, &
     & ICLUSTR, GAP, INFO)
+
+  print *, myInfo(3), "Lapack info: ", INFO
   call ga_sync()
 
   stop
@@ -621,7 +594,7 @@ subroutine oga_pdzhegv(ga_a, ga_b, eigenVals, valeDim)
   call ga_sync()
 
 
-end subroutine oga_pdzhegv
+end subroutine oga_pzhegv
 
 
 ! This subroutine is responsible for reading in the interaction matrices

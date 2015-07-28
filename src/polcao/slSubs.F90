@@ -1,19 +1,4 @@
-!! This module and its subroutines were modeled after various scalapack 
-!! interfaces in the Global Arrays, and NWChem packages from 
-!! Pacific Northwest National Lab (PNNL). The interfaces in GA and NWChem
-!! where developed to maintain F77 compatability. But because OLCAO
-!! is nearly entirely in F90 or later, the subroutines may look vastly
-!! different from the referenced subroutines. Mostly because the 
-!! Memory Allocator (MA) library is a relic and the absense of dynamically
-!! allocatable memory in F77.
-!!
-!! The currently implementation is incomplete due to the intial naive
-!! calculation of the BLACS process grid, and the maping to such grid.
-!! It is the intention to have a working naive implementation for in place
-!! The oga_pdzhegvx subroutine should be mostly immune to changes in the
-!! oga_tosl and gridCalc subroutines. The oga_tosl and oga_pdzhegvx
-!! subroutines will be edited later to have a more optimal calculation of
-!! the BLACS parameters required for the specific calculation.
+!! This module is focused on the parallelization of OLCAOmain. 
 !!
 !! Author: James E. Currie
 !! Email: jecyrd@mail.umkc.edu
@@ -26,44 +11,22 @@ module O_SlSubs
 
   contains
 
-! This subroutine is responsible for the conversion of a Global Array
-! to a local array in preparation for the pzhegvx lapack call in the
-! subroutine below. 
-! For some process grid determined by the gridCalc subroutine. We need
-! to extract data from the global array in such away to fit our grid
-! using the 2d block cyclic mapping specified in the SCALAPACK
-! documentation on netlib. http://netlib.org/scalapack/slug/node76.html
-subroutine oga_tosl(ga_arr, local, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim, firstGlobal)
-  use MPI
+! This subroutine is responsible for calculating and allocating the
+! local array holding sections of the global array.
+subroutine allocLocalArray(local, valeDim, blkFact, myInfo, gridDim)
   use O_Kinds
 
   implicit none
 
-#include "mafdecls.fh"
-#include "global.fh"
-
-  ! Define passed parameters
-  integer, intent(inout) :: ga_arr ! Global array to get data from
   complex (kind=double), intent(inout), allocatable, dimension(:,:) :: local
   integer, intent(in) :: valeDim
-  integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
   integer, intent(in) :: numprocs
   integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
   integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
-  integer, dimension(2), intent(in) :: trailDim
-  integer, dimension(2), intent(out) :: firstGlobal
+  integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
 
-  ! Define local Variables
-  integer :: l,m
-  integer :: i,j
-  integer :: a,b,aend,bend, ld
-  integer, dimension(2) :: lo, hi
-  integer, dimension(3) :: gaInfo
-  integer :: nrows, ncols ! Number of local array rows and columns
-  integer :: nbrow, nbcol ! Number of blocks along dimensions
-
-  ! External subroutine
-  integer, external ::  numroc
+  ! External subroutines
+  integer, external :: numroc
 
   ! Use numroc to determine the number of rows and columns needed by the
   ! distributed array.
@@ -74,6 +37,19 @@ subroutine oga_tosl(ga_arr, local, valeDim, gridDim, numprocs, myinfo, blkFact, 
   
   ! Initialize the local array to zero
   local(:,:) = cmplx(0.0_double,0.0_double)
+
+end subroutine allocLocalArray
+
+! This subroutine calculates the number of blocks along each row and 
+! column of the local array. It can then be used to loop over the
+! globalToLocalMap subroutine to get the appropriate lo,hi parameters
+! for taking information from a global array
+subroutine numRowColBlocks(nbrow, nbcol, blkFact)
+  implicit none
+ 
+  integer, intent(out) :: nbrow, nbcol ! Number of blocks along 
+  integer, intent(in) :: nrows, ncols
+  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
 
   ! First we need to calculate the number of blocks we'll be getting along
   ! each dimension of the local array.
@@ -86,106 +62,117 @@ subroutine oga_tosl(ga_arr, local, valeDim, gridDim, numprocs, myinfo, blkFact, 
     nbcol = nbcol + 1
   endif
 
+end subroutine numRowColBlocks
+
+! This subroutine takes a given block for a process, and calculates the
+! mapping between the global and local proceses.
+!
+! For some process grid determined by the getBlockFact subroutine. We need
+! to extract data from the global array in such away to fit our grid
+! using the 2d block cyclic mapping specified in the SCALAPACK
+! documentation on netlib. http://netlib.org/scalapack/slug/node76.html
+subroutine globalToLocalMap(blockRow, blockCol, nbrow, nbcol, gridDim, &
+    & myinfo, blkFact, trailDim, glo, ghi, llo, lhi, ld)
+
+  implicit none
+
+  ! Define passed parameters
+  integer, intent(in) :: blockRow, blockCol ! Block row and col index to get
+  integer, intent(in) :: nbrow, nbcol ! Total Number of blocks
+  integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
+  integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
+  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
+  integer, dimension(2), intent(in) :: trailDim ! trailing dims
+  integer, dimension(2), intent(out) :: glo, ghi, llo, lhi
+  integer, dimension(2), intent(out) :: ld
+
+  ! Define local Variables
+  integer :: l,m
+
+  call numRowColBlocks(nbrow, nbcol, blkfact)
+
   ! Using the equations in the documentation linked above, we can obtain
   ! the following set of equations.
   !  a=l*MB+x  I=(l*Pr + pr)*MB+x
   !  b=m*NB+y  J=(m*Pc + pc)*NB+y
-  ! Where the coordinates in the local array are (a,b), coordinates in
-  ! global array are (I,J), coordinates of local block are (l,m),
-  ! coordinates inside local block are (x,y), and process 
+  ! Where the coordinates in the local array are llo(1),llo(2), 
+  ! coordinates in global array are (I,J), coordinates of local block are 
+  ! (l,m), coordinates inside local block are (x,y), and process 
   ! coordinates (pr,pc). For block size MBxNB, and process grid size PrxPc.
   ! With the equation for I we can solve it twice with x=0, and 
   ! x=MB-1, this will give us the upper left and lower right of the block.
   ! This will be sufficient information to pull the block down from
-  ! the global array. As we loop over the local blocks.
+  ! the global array.
   ! 
   ! The upper left coordinate will be held by lo, and the lower right held
   ! by hi. "+ 0" intentionally left in for clarity.
   !
   ! Lo dimensions need to be incremented by 1, because the math is based
   ! off of a 0 index. Hi should calculate correctly.
+ 
+  ! l and m are a relic of a rewrite, left for clarity.
+  l = blockRow
+  m = blockCol
+
+  ! Upper left corner.
+  glo(1) = ((l*gridDim(1) + myInfo(1))*blkFact(1) + 0) + 1
+  glo(2) = ((m*gridDim(2) + myInfo(2))*blkFact(2) + 0) + 1
+  
+  ! Starting positions of local lo should be unnefected for every case
+  ! Read next comment.
+  llo(1) = (l*blkFact(1) + 0) + 1
+  llo(2) = (m*blkFact(2) + 0) + 1
+
+  ! If we are an irregular sized block we have to do a special get.
+  ! The special get has different ending indices than a normal block
+  ! of the exact specified dimensions. 
+  ! Should try to think about reordering conditions in terms of
+  ! frequency.
   !
-  ! A special case has to be considered for edge blocks of irregular size.
-  do i=1,nbrow
-    do j=1,nbcol
-      l = i-1
-      m = j-1
-      ! Upper left corner.
-      lo(1) = ((l*gridDim(1) + myInfo(1))*blkFact(1) + 0) + 1
-      lo(2) = ((m*gridDim(2) + myInfo(2))*blkFact(2) + 0) + 1
-      
-      ! Starting positions of a and b should be unnefected for every case
-      ! Read next comment.
-      a = (l*blkFact(1) + 0) + 1
-      b = (m*blkFact(2) + 0) + 1
+  ! The first  condition is: If trailing cols and rows. It'll make
+  !                          A block smaller in both dimensions.
+  ! The second condition is: If trailing cols.
+  ! The third  condition is: If trailing rows.
+  ! The last   condition is: If normal full block
+  if ( sum(trailDim(:))==2 .and. (i==nbrow) .and. (j==nbcol) ) then
+    ! Lower right corner. 
+    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + trailDim(1)
+    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + trailDim(2)
+    ! Calculate local ending coordinates
+    lhi(1) = llo(1) + trailDim(1) 
+    lhi(2) = llo(2) + trailDim(2) 
 
-      ! If we are an irregular sized block we have to do a special get.
-      ! The special get has different ending indices than a normal block
-      ! of the exact specified dimensions. 
-      ! Should try to think about reordering conditions in terms of
-      ! frequency.
-      !
-      ! The first  condition is: If trailing cols and rows. It'll make
-      !                          A block smaller in both dimensions.
-      ! The second condition is: If trailing cols.
-      ! The third  condition is: If trailing rows.
-      ! The last   condition is: If normal full block
-      if ( sum(trailDim(:))==2 .and. (i==nbrow) .and. (j==nbcol) ) then
-        ! Lower right corner. 
-        hi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + trailDim(1)
-        hi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + trailDim(2)
-        ! Calculate local starting coordinates
-        aend = size(local,1)
-        bend = size(local,2)
+  else if ( (trailDim(2) > 0) .and. (j==nbcol) ) then ! trailing cols
+    ! Lower right corner. 
+    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + blkFact(1)
+    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + trailDim(2)
+    ! Calculate local ending coordinates
+    lhi(1) = llo(1) + blkFact(1)
+    lhi(2) = llo(2) + trailDim(2)
 
-      else if ( (trailDim(2) > 0) .and. (j==nbcol) ) then ! trailing cols
-        ! Lower right corner. 
-        hi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + blkFact(1)
-        hi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + trailDim(2)
-        ! Calculate local starting coordinates
-        aend = a + blkFact(1)
-        bend = size(local,2) 
+  else if ( (trailDim(1) > 0) .and. (i==nbrow) ) then ! trailing rows
+    ! Lower right corner. 
+    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + trailDim(1)
+    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + blkFact(2)
+    ! Calculate local ending coordinates
+    lhi(1) = llo(1) + trailDim(1) 
+    lhi(2) = llo(2) + blkFact(1)  
+                           
+  else ! Normal Block
+    ! Lower right corner. 
+    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + blkFact(1)
+    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + blkFact(2)
+    ! Calculate local ending coordinates
+    lhi(1) = llo(1) + blkFact(1)
+    lhi(2) = llo(2) + blkFact(1)
 
-      else if ( (trailDim(1) > 0) .and. (i==nbrow) ) then ! trailing rows
-        ! Lower right corner. 
-        hi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + trailDim(1)
-        hi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + blkFact(2)
-        ! Calculate local starting coordinates
-        aend = size(local,1) 
-        bend = b + blkFact(1)  
-                               
-      else ! Normal Block
-        ! Lower right corner. 
-        hi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + blkFact(1)
-        hi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + blkFact(2)
-        ! Calculate local starting coordinates
-        aend = a + blkFact(1)
-        bend = b + blkFact(1)
+  endif
+  ! Set ld
+  ld(1) = (lhi(1)-llo(1)) + 1
+  ld(2) = (lhi(2)-llo(2)) + 1
+end subroutine globalToLocalMap 
 
-      endif
-
-
-      ! Set ld
-      ld = (aend - a) + 1
-
-      ! Get data from global array, storing it into local array at location
-      ! a : (a + blkFact(1)), and b : (b + blkFact(2))
-      call ga_get(ga_arr,lo(1),hi(1),lo(2),hi(2), &
-        & local( a:aend, b:bend ), &
-        & ld)
-      if ( (i==1) .and. (j==1) ) then
-        firstGlobal(1) = lo(1)
-        firstGlobal(2) = lo(2)
-      endif
-    enddo
-  enddo
-
-  ! We should now have the global data in the proper local configuration
-  ! for the grid size defined.
-
-end subroutine oga_tosl
-
-! In order to do the gridCalc subroutine we need to do integer factorization
+! In order to do the getBlockFact subroutine we need to do integer factorization
 ! of the number of processes, in order to find the "most square" 
 ! distribution of processors into the grid. To do this we take the, integer
 ! square root of numprocs, then divide numprocs by prows. From testing 
@@ -218,7 +205,7 @@ end subroutine calcProcGrid
 ! Because we're working with Hermitian matrices to solve our eigen problem
 ! we can typically get very square blocking factors. This should be little
 ! issue to map onto any processor grid.
-subroutine gridCalc(myInfo, numprocs, gridDim, valeDim, blkFact)
+subroutine getBlkFact(myInfo, numprocs, gridDim, valeDim, blkFact)
   implicit none
 
   ! Define passed parameters
@@ -247,8 +234,7 @@ subroutine gridCalc(myInfo, numprocs, gridDim, valeDim, blkFact)
   ! that our blocks are square.
   blkFact(1) =  int(modifiedValeDim / gridDim(2))
   blkFact(2) =  int(modifiedValeDim / gridDim(2))
-
-end subroutine gridCalc
+end subroutine getblkFact
 
 ! Subroutine that calculates the trailing dimensions for a process
 subroutine getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
@@ -295,66 +281,55 @@ subroutine getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
   if ( cTrailProc == myInfo(2) ) then
     trailDim(2) = mod(valeDim, blkFact(2))
   endif
-! do i = 0, 5
-!   call ga_sync()
-!   if (i==myInfo(3)) then
-!     print *, myInfo(3), "Proc Inf: ", myInfo(1), myInfo(2) 
-!     print *, myInfo(3), "Proc tra: ", rTrailProc, cTrailProc
-!     print *, myInfo(3), "TrailDim: ", trailDim
-!     print *, ""
-!   endif
-! enddo
-! call ga_sync()
-  
 
 end subroutine getTrailDim
 
-! This subroutine servers as the main wrapper to the zhegvx lapack
-! routine.
-subroutine oga_pzhegv(ga_a, ga_b, ga_z, eigenVals, valeDim)
-  use MPI
-  use O_Kinds
-
+! This subroutine creates the scalapack array descriptors for the local
+! Matrices
+subroutine getArrDesc(slctxt, desca, desb, descz)
   implicit none
 
-#include "mafdecls.fh"
-#include "global.fh"
+  ! Define passed parameters
+  integer, intent(in) :: slctxt
+  integer, intent(inout), dimension(9) :: desca, descb, descz
+
+  call descinit(desca, Adim1, Adim2, blkFact(1), blkFact(2),  & 
+    & 0, 0, slctxt, size(localA,1), info)
+
+  call descinit(descb, Bdim1, Bdim2, blkFact(1), blkFact(2),  & 
+    & 0, 0, slctxt, size(localB,1), info)
+
+  call descinit(descz, Adim1, Adim2, blkFact(1),blkFact(2),0,0, &
+    & slctxt, size(localZ,1), info)
+end subroutine getArrDesc
+
+
+! This subroutine creates a scalapack context and initializes the grid
+subroutine initSl(slctxt, grimDim, myInfo)
+  implicit none
 
   ! Define passed parameters
-  integer, intent(inout) :: ga_a ! Global Array holding Matrix A
-  integer, intent(inout) :: ga_b ! Global Array holding Matrix B
-  integer, intent(inout) :: ga_z ! Global Array holding Matrix Z
+  integer, intent(out) :: slctxt
+  integer, intent(inout), dimension(2) :: gridDim
+  integer, intent(inout), dimension(3) :: myInfo 
+  call BLACS_GET(-1,0, slctxt)
+  call BLACS_GRIDINIT(slctxt, 'r', gridDim(1), gridDim(2))
+  call BLACS_GRIDINFO(slctxt, gridDim(1), gridDim(2), myInfo(1), myInfo(2))
+end subroutine
 
-  ! Place to store eigenValues
-  complex (kind=double), intent(out), dimension(:,:) :: eigenVals
-  integer, intent(in) :: valeDim
 
-  ! Define local matrices to hold parts from global arrays
-  complex (kind=double), allocatable, dimension(:,:) :: localA
-  complex (kind=double), allocatable, dimension(:,:) :: localB
-  complex (kind=double), allocatable, dimension(:,:) :: localZ
+! This subroutine cleans up scalapack descriptors and contexts
+subroutine cleanUpSl(slctxt, desca, descb, descz)
+  implicit none
 
-  ! Define local variables
-  integer :: mpierr, numprocs
-  integer :: Atype, Adim1, Adim2
-  integer :: Btype, Bdim1, Bdim2
+end subroutine cleanUpSl
 
-  ! Variables used to describle BLACS and Scalapack
-  integer :: slctxt
-  integer, dimension(9) :: desca, descb, descz
 
-  ! Allocate Scalapack parameters to calculate for the pzhegvx call
-  ! information on netlib.
-  integer :: IBTYPE, N, IA, JA, IB, JB, VL, VU, IL, IU 
-  integer :: ABSTOL, M, NZ, ORFAC, IZ, JZ
-  real (kind=double), allocatable, dimension(:) :: W
-  integer :: LWORK, LRWORK, LIWORK
-  integer :: IFAIL, ICLUSTR, GAP, INFO
-  complex (kind=double), allocatable, dimension(:) :: WORK
-  real (kind=double), allocatable, dimension(:) :: RWORK
-  integer, allocatable, dimension(:) ::  IWORK
-  CHARACTER :: JOBZ, RNGE, UPLO
-
+! This subroutine is responsible for obtaining all the necessary information
+! needed by the scalapack routines.
+subroutine getAllSlInfo(myInfo, numprocs, gridDim, trailDim, valeDim, &
+    & blkFact)
+  implicit none
   ! Define information arrays that store important information
   ! Grid dim holds the dimensions of the processor grid
   integer, dimension(2) :: gridDim
@@ -368,97 +343,54 @@ subroutine oga_pzhegv(ga_a, ga_b, ga_z, eigenVals, valeDim)
   ! column coordinate they belong to in the process grid. myInfo(3) is
   ! the MPI rank of the process.
   integer, dimension(3) :: myinfo
-  ! This holds the first global indices of positions (1,1) in the local
-  ! array
-  integer, dimension(2) :: firstGlobalA
-  integer, dimension(2) :: firstGlobalB
-  integer, dimension(2) :: firstGlobalZ
 
-  ! Zrows and zcols for numroc
-  integer :: zrows, zcols
+  call getBlockFact(myInfo, numprocs, gridDim, valeDim, blkFact)
+  call getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
+  call getBlkFact(myInfo, numprocs, gridDim, valeDim, blkFact)
+end subroutine getAllSlInfo
+
+
+! This subroutine servers as the main wrapper to the zhegvx lapack
+! routine.
+subroutine solvePZHEGVX(localA, localB, localZ, desca, descb, descz, &
+    & myInfo, numprocs, gridDim, trailDim, valeDim, blkFact, eigenVals)
+  use MPI
+  use O_Kinds
+
+  implicit none
+
+  ! Define Passed Parameters
+  complex (kind=double), intent(inout), dimension(:,:) :: localA
+  complex (kind=double), intent(inout), dimension(:,:) :: localB
+  complex (kind=double), intent(inout), dimension(:,:) :: localZ
+  integer, intent(in), dimension(9) :: desca, descb, descz
+  integer, intent(in) :: valeDim
+  complex (kind=double), intent(out), dimension(:,:) :: eigenVals
+
+  ! Define local variables
+  integer :: mpierr, numprocs
+  integer :: Atype, Adim1, Adim2
+  integer :: Btype, Bdim1, Bdim2
+
+  ! Variables used to describle BLACS and Scalapack
+  integer :: slctxt
+
+  ! Allocate Scalapack parameters to calculate for the pzhegvx call
+  ! information on netlib.
+  integer :: IBTYPE, N, IA, JA, IB, JB, VL, VU, IL, IU 
+  integer :: ABSTOL, M, NZ, ORFAC, IZ, JZ
+  real (kind=double), allocatable, dimension(:) :: W
+  integer :: LWORK, LRWORK, LIWORK
+  integer :: IFAIL, ICLUSTR, GAP, INFO
+  complex (kind=double), allocatable, dimension(:) :: WORK
+  real (kind=double), allocatable, dimension(:) :: RWORK
+  integer, allocatable, dimension(:) ::  IWORK
+  CHARACTER :: JOBZ, RNGE, UPLO
 
   ! Define external functions
   real (kind=double) :: PDLAMCH
   external :: PDLAMCH, PZHEGVX
   integer, external :: numroc
-
-  ! Get environment parameters
-  myInfo(3) = ga_nodeid()
-  call MPI_COMM_SIZE(MPI_COMM_WORLD,numprocs,mpierr)
-
-  call ga_check_handle(ga_a, 'In subroutine oga_zhegv, passed ga_a is not &
-    a valid Global Arrays handle')
-  call ga_check_handle(ga_b, 'In subroutine oga_zhegv, passed ga_b is not &
-    a valid Global Arrays handle')
-
-  call ga_inquire(ga_a, Atype, Adim1, Adim2)
-  call ga_inquire(ga_b, Btype, Bdim1, Bdim2)
-  
-  ! Check to make sure arrays are properly sized for the linear algebra
-  ! operations
-  if (Adim1 .ne. Adim2) then
-    call ga_error('oga_pzhegv: matrix A not square ',0)
-  endif
-  if (Bdim1 .ne. Bdim2) then
-    call ga_error('oga_pzhegv: matrix B not square ',0)
-  endif
-  if (Bdim1 .ne. Adim1) then
-    call ga_error('oga_pzhegv: size of matrix A and B differ ',0)
-  endif
-
-
-  ! Determine the grid size and blocking factors we will use
-  call gridCalc(myInfo, numprocs, gridDim, valeDim, blkFact)
-
-  ! Initialize the SCALAPACK interface and great a process grid
-  ! calculated with gridCalc
-  call BLACS_GET(-1,0, slctxt)
-  call BLACS_GRIDINIT(slctxt, 'r', gridDim(1), gridDim(2))
-  call BLACS_GRIDINFO(slctxt, gridDim(1), gridDim(2), myInfo(1), myInfo(2))
-  
-  ! Determine the trailing dimensions, which has to be done after
-  ! gridCalc and gridInit.
-  call getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
-
-  ! If not in participating in the scalapack call, call ga_sync and
-  ! wait for all the other processes before returning. 
-  !!!!!!!!!!!!! This condition should not evaluate to true as long as the
-  !!!!!!!!!!!!! naive processor grid creation is still in place.
-  if (myInfo(1) == -1) then
-    print *, "SOMETHING WEIRD!"
-    call ga_sync()
-    return
-  endif
-
-  ! Pull down data from global arrays to local arrays
-  !print *, 'OGA 1'
-  !call flush(6)
-  call oga_tosl(ga_a, localA, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim, firstGlobalA)
-  !print *, 'OGA 2'
-  !call flush(6)
-  call oga_tosl(ga_b, localB, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim, firstGlobalB)
-  
-  call oga_tosl(ga_z, localZ, valeDim, gridDim, numprocs, myinfo, blkFact, trailDim, firstGlobalz)
-  print *, 'Done with pull'
-  call flush(6)
-
-  ! Create Array Descriptors
-  call ga_sync()
-  print *, "1", myInfo(3), size(localA,1), size(localA,2)
-  call ga_sync()
-  call descinit(desca, Adim1, Adim2, blkFact(1), blkFact(2),  & 
-    & 0, 0, slctxt, size(localA,1), info)
-
-  print *, "2", myInfo(3), size(localB,1), size(localB,2)
-  call ga_sync()
-  call descinit(descb, Bdim1, Bdim2, blkFact(1), blkFact(2),  & 
-    & 0, 0, slctxt, size(localB,1), info)
-
-  print *, "3", myInfo(3), size(localZ,1), size(localZ,2)
-  call ga_sync()
-  ! Create array descriptor for eigenVector storage
-  call descinit(descz, Adim1, Adim2, blkFact(1),blkFact(2),0,0, &
-    & slctxt, size(localZ,1), info)
 
   ! Determine other SCALAPACK info defined in the pzhegvx documentation
   ! on netlib.
@@ -528,22 +460,11 @@ subroutine oga_pzhegv(ga_a, ga_b, ga_z, eigenVals, valeDim)
   GAP = 0
   INFO = 0
   
-
-  
-  call flush(6)
-  call ga_sync()
-  print *, myinfo(3), 'lapack 1'
-  call ga_sync()
   ! As stated above we call the PZHEGVX subroutine as a workspace query
-!  call PZHEEV(JOBZ, UPLO, N, localA, IA, JA, DESCA, W, localZ, IZ, JZ, DESCZ, WORK, &
-!    & LWORK, RWORK, LRWORK, INFO)
   call PZHEGVX(IBTYPE, JOBZ, RNGE, UPLO, N, localA, IA, JA, DESCA, localB, &
     & IB, JB, DESCB, VL, VU, IL, IU, ABSTOL, M, NZ, W, ORFAC, localZ, &
     & IZ, JZ, DESCZ, WORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, IFAIL, &
     & ICLUSTR, GAP, INFO)
-
-  print *, myinfo(3), 'lapack 1'
-  call ga_sync()
  
   ! Now we set the proper workspace parameters as needed. And resize
   ! the arrays.
@@ -551,7 +472,6 @@ subroutine oga_pzhegv(ga_a, ga_b, ga_z, eigenVals, valeDim)
   LWORK =   WORK(1)
   LRWORK =  RWORK(1)
   LIWORK =  IWORK(1)
-  call ga_sync()
 
   deallocate(WORK)
   deallocate(RWORK)
@@ -563,9 +483,6 @@ subroutine oga_pzhegv(ga_a, ga_b, ga_z, eigenVals, valeDim)
   RWORK(:) = 0
   IWORK(:) = 0
 
-  print *, 'lapack 2'
-  call flush(6)
-  call ga_sync()
   ! Now we we have sufficient workspace for scalapack and can now 
   ! call PZHEGVX to actually solve our eigen problem.
   call PZHEGVX(IBTYPE, JOBZ, RNGE, UPLO, N, localA, IA, JA, DESCA, localB, &
@@ -573,28 +490,20 @@ subroutine oga_pzhegv(ga_a, ga_b, ga_z, eigenVals, valeDim)
     & IZ, JZ, DESCZ, WORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, IFAIL, &
     & ICLUSTR, GAP, INFO)
 
-  print *, myInfo(3), "Lapack info: ", INFO
-  call ga_sync()
-
   stop
   
   ! Redistribute the eigenvalues to all processes for later use.
-!  call MPI_BROADCAST
-
-  ! deallocate the local matrix allocated in oga_tosl
-  deallocate(localA)
-  deallocate(localB)
-  deallocate(localZ)
-
-  ! Close the SCALAPACK interface, and any descriptors
-  !
-
-
-  ! Sync all processes before returning to the calling subroutine
-  call ga_sync()
+  ! call distributeEigenVals()
 
 
 end subroutine oga_pzhegv
+
+! This subroutine is responsible for making sure the eigenvalues are
+! redistributed to all processes for use later
+subroutine distributeEigenVals()
+!  call MPI_BROADCAST
+
+end subroutine
 
 
 ! This subroutine is responsible for reading in the interaction matrices
@@ -613,5 +522,49 @@ subroutine readHDF5_to_GA()
 
 
 end subroutine readHDF5_to_GA
+
+! Luckily after parallelizing setup I made routines for reading in the
+! new hdf5 datasets, we can utilize these and then just put the resulting
+! matrix into a global array
+subroutine readMatrixToGA(dataSetID, matrixDims, ga_vv)
+  use MPI
+  use O_Kinds
+
+  implicit none
+
+#include "mafdecls.fh"
+#include "global.fh"
+
+  ! Define Passed parameters
+  integer (hid_t), intent(in) :: dataSetID
+  integer (hsize_t), dimension(2) :: matrixDims
+  integer, intent(inout) :: ga_vv ! Global array identifier
+
+  ! Define local variables
+  integer :: dim1, dim2A
+  real (kind=double), dimension(matrixDims(1),matrixDims(2) :: temp
+
+  ! Series of routines taken from secularEquation to be edited later
+  call readPackedMatrix(atomNucOverlap_did(i), packedValeVale, atomDims, &
+    & valeDim, valeDim)
+
+  call readPackedMatrixAccum(atomKEOverlap_did(i), packedValeVale, &
+    & tempPackedValeVale, atomDims, 0.0_double, valeDim, valeDim)
+
+  do j=1, potDim
+    call readPackedMatrixAccum(atomPotOverlap_did(i,j), packedaleVale, &
+        & tempPackedValeVale, atomDims, potCoeffs(j, spinDirection), &
+        & valeDim, valeDim)
+  enddo
+
+  call unpackMatrix(valeVale(:,:,1,spinDirection, packedValeVale, valeDim,0)
+
+  call readPackedMatrix(atomOverlap_did(i), packedValeVale, atomDims, &
+    & valeDim, valeDim)
+
+  call unpackMatrix(valeValeOL(:,:,1,1), packedValeVale,valeDim,0)
+
+
+end subroutine readMatrix
 
 end module O_SlSubs

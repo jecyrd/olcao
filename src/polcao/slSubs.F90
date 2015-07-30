@@ -11,6 +11,55 @@ module O_SlSubs
 
   contains
 
+! This subroutine servers as the wrapper to neatly tie up all the
+! subroutines below
+subroutine solve_PZHEGVX(valeDim, numKPoints, potDim, spinDirection, &
+    & hdfMatrixDescriptors)
+  use O_Kinds
+
+  implicit none
+
+  integer, intent(in) :: valeDim, numKPoints, potDim, spinDirection
+
+
+  ! Calculate all information needed to have the proper distribution
+  ! for the coming lapack call
+  call getBlockFact(myInfo, numprocs, gridDim, valeDim, blkFact)
+  call getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
+  
+  call numRowColBlocks(nbrow, nbcol, blkFact)
+
+  ! Allocate proper space for global array
+  call allocLocalArray(local, valeDim, blkFact, myInfo, gridDim)
+
+  ! Read the hamiltonian and overlap matrices from disk into the proper
+  ! local distributions
+  call readDistributedWaveFunction()
+  
+  ! Initlaize scalapack context
+  call initSl(slctxt, grimDim, myInfo)
+
+  ! Initialize array descriptors for scalapack
+  call getArrDesc(slctxt, blkFact, localLD, desca, desb, descz)
+
+  ! Solve the eigenvalue problem now that we're properly distributed.
+  call sl_PZHEGVX(localA, localB, localZ, desca, descb, descz, &
+       & myInfo, numprocs, gridDim, trailDim, valeDim, blkFact, eigenVals)
+
+  ! First we'll dump the wavefunction to disk.
+  call writeWaveFunction()
+
+  ! Now we'll want to distribute the energy eigenalues for later use in
+  ! the computation
+  call distributeEigenVals()
+
+  ! Now we'll deallocate any memory we've allocated above
+
+  ! Finally we'll clean up scalapack contexts and descriptors
+  call cleanUpSl(slctxt, desca, descb, descz)
+
+end subroutine solve_PZHEGVX
+
 ! This subroutine is responsible for calculating and allocating the
 ! local array holding sections of the global array.
 subroutine allocLocalArray(local, valeDim, blkFact, myInfo, gridDim)
@@ -205,7 +254,7 @@ end subroutine calcProcGrid
 ! Because we're working with Hermitian matrices to solve our eigen problem
 ! we can typically get very square blocking factors. This should be little
 ! issue to map onto any processor grid.
-subroutine getBlkFact(myInfo, numprocs, gridDim, valeDim, blkFact)
+subroutine getBlockFact(myInfo, numprocs, gridDim, valeDim, blkFact)
   implicit none
 
   ! Define passed parameters
@@ -286,7 +335,7 @@ end subroutine getTrailDim
 
 ! This subroutine creates the scalapack array descriptors for the local
 ! Matrices
-subroutine getArrDesc(slctxt, desca, desb, descz)
+subroutine getArrDesc(slctxt, blkFact, localLD, desca, desb, descz)
   implicit none
 
   ! Define passed parameters
@@ -324,35 +373,9 @@ subroutine cleanUpSl(slctxt, desca, descb, descz)
 
 end subroutine cleanUpSl
 
-
-! This subroutine is responsible for obtaining all the necessary information
-! needed by the scalapack routines.
-subroutine getAllSlInfo(myInfo, numprocs, gridDim, trailDim, valeDim, &
-    & blkFact)
-  implicit none
-  ! Define information arrays that store important information
-  ! Grid dim holds the dimensions of the processor grid
-  integer, dimension(2) :: gridDim
-  ! blkFact holds the blocking factor used along each dimension
-  integer, dimension(2) :: blkFact
-  ! trailDim, holds the number of trailng rows or columns along the
-  ! respective dimension
-  integer, dimension(2) :: trailDim
-  ! myInfo holds process specific information, myInfo(1) is the row 
-  ! coordinate they belong to in the process grid. myInfo(2) is the 
-  ! column coordinate they belong to in the process grid. myInfo(3) is
-  ! the MPI rank of the process.
-  integer, dimension(3) :: myinfo
-
-  call getBlockFact(myInfo, numprocs, gridDim, valeDim, blkFact)
-  call getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
-  call getBlkFact(myInfo, numprocs, gridDim, valeDim, blkFact)
-end subroutine getAllSlInfo
-
-
 ! This subroutine servers as the main wrapper to the zhegvx lapack
 ! routine.
-subroutine solvePZHEGVX(localA, localB, localZ, desca, descb, descz, &
+subroutine sl_PZHEGVX(localA, localB, localZ, desca, descb, descz, &
     & myInfo, numprocs, gridDim, trailDim, valeDim, blkFact, eigenVals)
   use MPI
   use O_Kinds
@@ -378,7 +401,8 @@ subroutine solvePZHEGVX(localA, localB, localZ, desca, descb, descz, &
   ! Allocate Scalapack parameters to calculate for the pzhegvx call
   ! information on netlib.
   integer :: IBTYPE, N, IA, JA, IB, JB, VL, VU, IL, IU 
-  integer :: ABSTOL, M, NZ, ORFAC, IZ, JZ
+  integer :: ABSTOL, M, NZ, IZ, JZ
+  real (kind=double) :: ORFAC
   real (kind=double), allocatable, dimension(:) :: W
   integer :: LWORK, LRWORK, LIWORK
   integer :: IFAIL, ICLUSTR, GAP, INFO
@@ -417,7 +441,6 @@ subroutine solvePZHEGVX(localA, localB, localZ, desca, descb, descz, &
   ! Specifying it the way it is below is the most accurate eigenvalue
   ! convergence.
   ABSTOL = 2 * PDLAMCH(slctxt,'S')
-  print *, myInfo(3), "abs: ", abstol
 
   ! Global outputs, just initializing to 0
   M = 0
@@ -427,21 +450,21 @@ subroutine solvePZHEGVX(localA, localB, localZ, desca, descb, descz, &
   allocate(W(valeDim))
   W(:) = 0.0_double
 
+  ! Specifies which eigenvectors should be reorthogonalized. Eigenvectors
+  ! that correspond to eigenvalues which are within tol=ORFAC*norm(A) of 
+  ! each other are to be reorthogonalized.
+  ! For now we'll use the default value of 10^-3
+  ORFAC = 1E-3
 
-  ! Specifies which eigenvectors should be reorthoganalized. For now
-  ! we will specify that none of the eigenvectors should be
-  ! reorthogonalized
-  ORFAC = 0
+  ! Row and column index in the global array Z indicating the first
+  ! row of sub(Z)
+  IZ = 1
+  JZ = 1
 
-  ! Row and column indices of the locals first column to the globals
-  IZ = 1!firstGlobalZ(1)
-  JZ = 1!firstGlobalZ(2)
-
-  ! Instead of trying to understand the appropriate size of the WORK
-  ! arrays we will call PZHEGVX with LWORK, LRWORK, and LIWORK specified
+  ! We will first call PZHEGVX with LWORK, LRWORK, and LIWORK specified
   ! as -1. This will cause scalapack to do a workspace query and output
   ! the optimal sizes of these parameters in the first index of the
-  ! assosciated arrays.
+  ! assosciated arrays. We'll then reallocate to the correct sizes.
   LWORK =  -1
   allocate(WORK(1)) 
   WORK(:) = 0
@@ -468,7 +491,6 @@ subroutine solvePZHEGVX(localA, localB, localZ, desca, descb, descz, &
  
   ! Now we set the proper workspace parameters as needed. And resize
   ! the arrays.
-  print *, myInfo(3), "Workspace Query: ", work(1), rwork(1), iwork(1)
   LWORK =   WORK(1)
   LRWORK =  RWORK(1)
   LIWORK =  IWORK(1)
@@ -490,13 +512,9 @@ subroutine solvePZHEGVX(localA, localB, localZ, desca, descb, descz, &
     & IZ, JZ, DESCZ, WORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, IFAIL, &
     & ICLUSTR, GAP, INFO)
 
-  stop
-  
-  ! Redistribute the eigenvalues to all processes for later use.
-  ! call distributeEigenVals()
+end subroutine sl_PZHEGVX
 
 
-end subroutine oga_pzhegv
 
 ! This subroutine is responsible for making sure the eigenvalues are
 ! redistributed to all processes for use later

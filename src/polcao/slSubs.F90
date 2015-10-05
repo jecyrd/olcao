@@ -18,9 +18,11 @@ subroutine solve_PZHEGVX(valeDim, numKPoints, potDim, spinDirection, &
   use O_Kinds
 
   implicit none
-
+  integer, dimension(3) :: myInfo
   integer, intent(in) :: valeDim, numKPoints, potDim, spinDirection
 
+  ! We're going to need to fire set my info in order to do any of this
+  ! it has lots of relevant information that lots need.
 
   ! Calculate all information needed to have the proper distribution
   ! for the coming lapack call
@@ -203,7 +205,7 @@ subroutine allocLocalArray(local, valeDim, blkFact, myInfo, gridDim)
   complex (kind=double), intent(inout), allocatable, dimension(:,:) :: local
   integer, intent(in) :: valeDim
   integer, intent(in) :: numprocs
-  integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
+  integer, dimension(3), intent(in) :: myInfo  ! prow, pcol, mpirank
   integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
   integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
 
@@ -231,7 +233,7 @@ end subroutine allocLocalArray
 ! Because parallel reads shouldn't hamper our performance we'll have each
 ! process define hyperslabs to read only what it needs.
 subroutine readDistributedWaveFunction(localArr, nbrow, nbcol, gridDim, 
-  & myinfo, blkFact, trailDim)
+  & myInfo, blkFact, trailDim)
 
   use O_Kinds
   use O_PotTypes only .....
@@ -243,27 +245,52 @@ subroutine readDistributedWaveFunction(localArr, nbrow, nbcol, gridDim,
   complex, (kind=double), intent(inout) :: localArr
   integer, intent(in) :: nbrow, nbcol ! Total Number of blocks
   integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
-  integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
+  integer, dimension(3), intent(in) :: myInfo  ! prow, pcol, mpirank
   integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
   integer, dimension(2), intent(in) :: trailDim ! trailing dims
 
   ! Define local variables
   integer :: blockRow
   integer :: blockCol
+  integer :: mpisize, mpierr
   integer, dimension(2) :: glo, ghi, llo, lhi
   integer, dimension(2) :: ld
   real, (kind=double), allocatable, dimension(:,:) :: tempReal
   real, (kind=double), allocatable, dimension(:,:) :: tempImag
- 
+  
+  call MPI_COMM_SIZE(MPI_COMM_WORLD, mpisize, mpierr)
+  
   ! Create Dataspace and open for access
   call h5screate_simple_f(numdims, dimsizes(,), memspace_dsid, hdferr)
 
+  ! We need to figure out the block indices assosciated with our
+  ! particular process. Indirect quote from scalapack documentation: 
+  !   For an array length N to be stored on P processes. By convention
+  !   the array entries are numbered 1 through N and the processes are
+  !   numbered 0 through P-1. The array is divided into contiguous blocks of
+  !   size NB. When NB does not divide N evenly, the last block of array
+  !   elements will only contain mod(N,NB) entries instead of NB. Blocks
+  !   are numbered starting from zero and dealt out to the processes like a
+  !   deck of cards. In other words, if we assume that the process 0
+  !   receives the first block, the kth block is assigned to the process
+  !   of coordinate mod(k,P).
+  !
+  ! Because the above applies to a one-dimensional array we need only apply
+  ! it along both the rows and columns. so we only need to perform the
+  ! inner two loops if:
+  !        mod(i,mpisize)==myInfo(1) .and. mod(j,mpisize)==myInfo(2)
   do i=1, nbrow ! Loop over blockRows
     do j=1, nbcol ! Loop over blockCols
+      ! Logical not of the condition above, because I didn't want to retab
+      ! everything below.
+      if ( mod(i,mpisize)/=myInfo(1) .or. mod(j,mpisize)/=myInfo(2) then
+        cycle
+      endif
+
       ! Now we can use the globaToLocalMap subroutine to calculate the lo
       ! and high parameters for our hyperslab for the upcomming hdf5 read
       call globalToLocalMap(i, j, nbrow, nbcol, gridDim, &
-        & myinfo, blkfact, trailDim, glo, ghi, llo, lhi, ld)
+        & myInfo, blkfact, trailDim, glo, ghi, llo, lhi, ld)
 
       do j=1, numKPoints ! Loop over kPoints
         do l=1, potDim ! Loop over potential dimensions
@@ -303,7 +330,7 @@ end subroutine
 ! using the 2d block cyclic mapping specified in the SCALAPACK
 ! documentation on netlib. http://netlib.org/scalapack/slug/node76.html
 subroutine globalToLocalMap(blockRow, blockCol, nbrow, nbcol, gridDim, &
-    & myinfo, blkFact, trailDim, glo, ghi, llo, lhi, ld)
+    & myInfo, blkFact, trailDim, glo, ghi, llo, lhi, ld)
 
   implicit none
 
@@ -311,7 +338,7 @@ subroutine globalToLocalMap(blockRow, blockCol, nbrow, nbcol, gridDim, &
   integer, intent(in) :: blockRow, blockCol ! Block row and col index to get
   integer, intent(in) :: nbrow, nbcol ! Total Number of blocks
   integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
-  integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
+  integer, dimension(3), intent(in) :: myInfo  ! prow, pcol, mpirank
   integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
   integer, dimension(2), intent(in) :: trailDim ! trailing dims
   integer, dimension(2), intent(out) :: glo, ghi, llo, lhi
@@ -592,7 +619,7 @@ subroutine writeWaveFunction()
 
   ! Have process zero store it's sections of the wavefunction.
   ! If not process zero, put up barrier and wait till zero is done.
-  if (myinfo(3) == 0) then
+  if (myInfo(3) == 0) then
     call writeMatrixSection()
     call MPI_BARRIER(mpierr)
   else
@@ -603,13 +630,13 @@ subroutine writeWaveFunction()
   ! store.
   do i=1, (mpisize-1)
     ! if you're process zero receive local array section then write
-    if (myinfo(3) == 0) then
+    if (myInfo(3) == 0) then
       call recvLocalArray()
 
       call writeMatrixSection()
       
     ! If you're process mpirank==i, send local array section
-    elseif (myinfo(3) == i) then
+    elseif (myInfo(3) == i) then
       call sendLocalArray()
 
     endif

@@ -12,7 +12,7 @@ module O_SlSubs
   contains
 
 ! This subroutine servers as the wrapper to neatly tie up all the
-! subroutines below
+! subroutines below.
 subroutine solve_PZHEGVX(valeDim, numKPoints, potDim, spinDirection, &
     & hdfMatrixDescriptors)
   use O_Kinds
@@ -60,185 +60,6 @@ subroutine solve_PZHEGVX(valeDim, numKPoints, potDim, spinDirection, &
 
 end subroutine solve_PZHEGVX
 
-! This subroutine is responsible for calculating and allocating the
-! local array holding sections of the global array.
-subroutine allocLocalArray(local, valeDim, blkFact, myInfo, gridDim)
-  use O_Kinds
-
-  implicit none
-
-  complex (kind=double), intent(inout), allocatable, dimension(:,:) :: local
-  integer, intent(in) :: valeDim
-  integer, intent(in) :: numprocs
-  integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
-  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
-  integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
-
-  ! External subroutines
-  integer, external :: numroc
-
-  ! Use numroc to determine the number of rows and columns needed by the
-  ! distributed array.
-  nrows = numroc(valeDim, blkFact(1), myInfo(1), 0, gridDim(1))
-  ncols = numroc(valeDim, blkFact(2), myInfo(2), 0, gridDim(2))
-
-  allocate(local(nrows,ncols))
-  
-  ! Initialize the local array to zero
-  local(:,:) = cmplx(0.0_double,0.0_double)
-
-end subroutine allocLocalArray
-
-! This subroutine calculates the number of blocks along each row and 
-! column of the local array. It can then be used to loop over the
-! globalToLocalMap subroutine to get the appropriate lo,hi parameters
-! for taking information from a global array
-subroutine numRowColBlocks(nbrow, nbcol, blkFact)
-  implicit none
- 
-  integer, intent(out) :: nbrow, nbcol ! Number of blocks along 
-  integer, intent(in) :: nrows, ncols
-  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
-
-  ! First we need to calculate the number of blocks we'll be getting along
-  ! each dimension of the local array.
-  nbrow = int(nrows/blkFact(1))
-  if ( mod(nrows,blkFact(1)) /= 0 ) then
-    nbrow = nbrow + 1
-  endif
-  nbcol = int(ncols/blkFact(2))
-  if ( mod(ncols,blkFact(2)) /= 0 ) then
-    nbcol = nbcol + 1
-  endif
-
-end subroutine numRowColBlocks
-
-! This subroutine takes a given block for a process, and calculates the
-! mapping between the global and local proceses.
-!
-! For some process grid determined by the getBlockFact subroutine. We need
-! to extract data from the global array in such away to fit our grid
-! using the 2d block cyclic mapping specified in the SCALAPACK
-! documentation on netlib. http://netlib.org/scalapack/slug/node76.html
-subroutine globalToLocalMap(blockRow, blockCol, nbrow, nbcol, gridDim, &
-    & myinfo, blkFact, trailDim, glo, ghi, llo, lhi, ld)
-
-  implicit none
-
-  ! Define passed parameters
-  integer, intent(in) :: blockRow, blockCol ! Block row and col index to get
-  integer, intent(in) :: nbrow, nbcol ! Total Number of blocks
-  integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
-  integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
-  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
-  integer, dimension(2), intent(in) :: trailDim ! trailing dims
-  integer, dimension(2), intent(out) :: glo, ghi, llo, lhi
-  integer, dimension(2), intent(out) :: ld
-
-  ! Define local Variables
-  integer :: l,m
-
-  call numRowColBlocks(nbrow, nbcol, blkfact)
-
-  ! Using the equations in the documentation linked above, we can obtain
-  ! the following set of equations.
-  !  a=l*MB+x  I=(l*Pr + pr)*MB+x
-  !  b=m*NB+y  J=(m*Pc + pc)*NB+y
-  ! Where the coordinates in the local array are llo(1),llo(2), 
-  ! coordinates in global array are (I,J), coordinates of local block are 
-  ! (l,m), coordinates inside local block are (x,y), and process 
-  ! coordinates (pr,pc). For block size MBxNB, and process grid size PrxPc.
-  ! With the equation for I we can solve it twice with x=0, and 
-  ! x=MB-1, this will give us the upper left and lower right of the block.
-  ! This will be sufficient information to pull the block down from
-  ! the global array.
-  ! 
-  ! The upper left coordinate will be held by lo, and the lower right held
-  ! by hi. "+ 0" intentionally left in for clarity.
-  !
-  ! Lo dimensions need to be incremented by 1, because the math is based
-  ! off of a 0 index. Hi should calculate correctly.
- 
-  ! l and m are a relic of a rewrite, left for clarity.
-  l = blockRow
-  m = blockCol
-
-  ! Upper left corner.
-  glo(1) = ((l*gridDim(1) + myInfo(1))*blkFact(1) + 0) + 1
-  glo(2) = ((m*gridDim(2) + myInfo(2))*blkFact(2) + 0) + 1
-  
-  ! Starting positions of local lo should be unnefected for every case
-  ! Read next comment.
-  llo(1) = (l*blkFact(1) + 0) + 1
-  llo(2) = (m*blkFact(2) + 0) + 1
-
-  ! If we are an irregular sized block we have to do a special get.
-  ! The special get has different ending indices than a normal block
-  ! of the exact specified dimensions. 
-  ! Should try to think about reordering conditions in terms of
-  ! frequency.
-  !
-  ! The first  condition is: If trailing cols and rows. It'll make
-  !                          A block smaller in both dimensions.
-  ! The second condition is: If trailing cols.
-  ! The third  condition is: If trailing rows.
-  ! The last   condition is: If normal full block
-  if ( sum(trailDim(:))==2 .and. (i==nbrow) .and. (j==nbcol) ) then
-    ! Lower right corner. 
-    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + trailDim(1)
-    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + trailDim(2)
-    ! Calculate local ending coordinates
-    lhi(1) = llo(1) + trailDim(1) 
-    lhi(2) = llo(2) + trailDim(2) 
-
-  else if ( (trailDim(2) > 0) .and. (j==nbcol) ) then ! trailing cols
-    ! Lower right corner. 
-    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + blkFact(1)
-    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + trailDim(2)
-    ! Calculate local ending coordinates
-    lhi(1) = llo(1) + blkFact(1)
-    lhi(2) = llo(2) + trailDim(2)
-
-  else if ( (trailDim(1) > 0) .and. (i==nbrow) ) then ! trailing rows
-    ! Lower right corner. 
-    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + trailDim(1)
-    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + blkFact(2)
-    ! Calculate local ending coordinates
-    lhi(1) = llo(1) + trailDim(1) 
-    lhi(2) = llo(2) + blkFact(1)  
-                           
-  else ! Normal Block
-    ! Lower right corner. 
-    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + blkFact(1)
-    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + blkFact(2)
-    ! Calculate local ending coordinates
-    lhi(1) = llo(1) + blkFact(1)
-    lhi(2) = llo(2) + blkFact(1)
-
-  endif
-  ! Set ld
-  ld(1) = (lhi(1)-llo(1)) + 1
-  ld(2) = (lhi(2)-llo(2)) + 1
-end subroutine globalToLocalMap 
-
-! In order to do the getBlockFact subroutine we need to do integer factorization
-! of the number of processes, in order to find the "most square" 
-! distribution of processors into the grid. To do this we take the, integer
-! square root of numprocs, then divide numprocs by prows. From testing 
-! integer values of processes in the range of 2 to 1,000,000 the biggest
-! difference in abs(prows-pcols) is 2. Meaning at most only 2 processes
-! will be left out by the user's choice of processes.
-subroutine calcProcGrid(numprocs, prows, pcols)
-  implicit none
-
-  ! Define passed parameters
-  integer, intent(in) :: numprocs
-  integer, intent(out) :: prows, pcols
-
-  prows = int(sqrt(dble(numprocs)))
-  pcols = numprocs/prows
-end subroutine calcProcGrid
-
 ! This subroutine determines the process grid to be used for the
 ! call to scalapack. There are a lot of considerations that need to be
 ! taken into account in order to have an optimal process grid.
@@ -273,8 +94,6 @@ subroutine getBlockFact(myInfo, numprocs, gridDim, valeDim, blkFact)
     modifiedValeDim = valeDim
   endif
 
-  ! For now we'll assum that the user has used a perfect square number
-  ! of processors. And we'll then make the processor grid square.
   call calcProcGrid(numProcs, gridDim(1), gridDim(2))
 
   ! Calculate the blocking factors to be used. From the calcProcGrid
@@ -284,6 +103,24 @@ subroutine getBlockFact(myInfo, numprocs, gridDim, valeDim, blkFact)
   blkFact(1) =  int(modifiedValeDim / gridDim(2))
   blkFact(2) =  int(modifiedValeDim / gridDim(2))
 end subroutine getblkFact
+
+! In order to do the getBlockFact subroutine we need to do integer factorization
+! of the number of processes, in order to find the "most square" 
+! distribution of processors into the grid. To do this we take the, integer
+! square root of numprocs, then divide numprocs by prows. From testing 
+! integer values of processes in the range of 2 to 1,000,000 the biggest
+! difference in abs(prows-pcols) is 2. Meaning at most only 2 processes
+! will be left out by the user's choice of processes.
+subroutine calcProcGrid(numprocs, prows, pcols)
+  implicit none
+
+  ! Define passed parameters
+  integer, intent(in) :: numprocs
+  integer, intent(out) :: prows, pcols
+
+  prows = int(sqrt(dble(numprocs)))
+  pcols = numprocs/prows
+end subroutine calcProcGrid
 
 ! Subroutine that calculates the trailing dimensions for a process
 subroutine getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
@@ -299,9 +136,6 @@ subroutine getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
   ! Define local variables
   integer :: rTrailProc, cTrailProc
 
-  ! remove later
-  integer :: i
-  
   ! Initialize trailDIm
   trailDim(:) = 0
 
@@ -333,6 +167,255 @@ subroutine getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
 
 end subroutine getTrailDim
 
+! This subroutine calculates the number of blocks along each row and 
+! column of the local array. It can then be used to loop over the
+! globalToLocalMap subroutine to get the appropriate lo,hi parameters
+! for taking information from a global array
+subroutine numRowColBlocks(nbrow, nbcol, blkFact)
+  implicit none
+ 
+  integer, intent(out) :: nbrow, nbcol ! Number of blocks along 
+  integer, intent(in) :: nrows, ncols
+  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
+
+  ! First we need to calculate the number of blocks we'll be getting along
+  ! each dimension of the local array.
+  nbrow = int(nrows/blkFact(1))
+  nbcol = int(ncols/blkFact(2))
+
+  ! Then add in any extra blocks if not evently distributable
+  if ( mod(nrows,blkFact(1)) /= 0 ) then
+    nbrow = nbrow + 1
+  endif
+  if ( mod(ncols,blkFact(2)) /= 0 ) then
+    nbcol = nbcol + 1
+  endif
+
+end subroutine numRowColBlocks
+
+! This subroutine is responsible for calculating and allocating the
+! local array holding sections of the global array.
+subroutine allocLocalArray(local, valeDim, blkFact, myInfo, gridDim)
+  use O_Kinds
+
+  implicit none
+
+  complex (kind=double), intent(inout), allocatable, dimension(:,:) :: local
+  integer, intent(in) :: valeDim
+  integer, intent(in) :: numprocs
+  integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
+  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
+  integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
+
+  ! External subroutines
+  integer, external :: numroc
+
+  ! Use numroc to determine the number of rows and columns needed by the
+  ! distributed array.
+  nrows = numroc(valeDim, blkFact(1), myInfo(1), 0, gridDim(1))
+  ncols = numroc(valeDim, blkFact(2), myInfo(2), 0, gridDim(2))
+
+  allocate(local(nrows,ncols))
+  
+  ! Initialize the local array to zero
+  local(:,:) = cmplx(0.0_double,0.0_double)
+
+end subroutine allocLocalArray
+ 
+! This Subroutine is responsible for reading only the blocks of data for the
+! current processes local array. We need to loop over each block in the 
+! distributed matrix, calculate the section of data to be read from HDF5.
+! Then, because our data is hermitian, we first read in the real part from
+! the upper half. The imaginary part from the lower half (transposed slab).
+!
+! Because parallel reads shouldn't hamper our performance we'll have each
+! process define hyperslabs to read only what it needs.
+subroutine readDistributedWaveFunction(localArr, nbrow, nbcol, gridDim, 
+  & myinfo, blkFact, trailDim)
+
+  use O_Kinds
+  use O_PotTypes only .....
+  use HDF5 only ....
+
+  implicit none
+
+  ! Define passed parameters
+  complex, (kind=double), intent(inout) :: localArr
+  integer, intent(in) :: nbrow, nbcol ! Total Number of blocks
+  integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
+  integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
+  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
+  integer, dimension(2), intent(in) :: trailDim ! trailing dims
+
+  ! Define local variables
+  integer :: blockRow
+  integer :: blockCol
+  integer, dimension(2) :: glo, ghi, llo, lhi
+  integer, dimension(2) :: ld
+  real, (kind=double), allocatable, dimension(:,:) :: tempReal
+  real, (kind=double), allocatable, dimension(:,:) :: tempImag
+ 
+  ! Create Dataspace and open for access
+  call h5screate_simple_f(numdims, dimsizes(,), memspace_dsid, hdferr)
+
+  do i=1, nbrow ! Loop over blockRows
+    do j=1, nbcol ! Loop over blockCols
+      ! Now we can use the globaToLocalMap subroutine to calculate the lo
+      ! and high parameters for our hyperslab for the upcomming hdf5 read
+      call globalToLocalMap(i, j, nbrow, nbcol, gridDim, &
+        & myinfo, blkfact, trailDim, glo, ghi, llo, lhi, ld)
+
+      do j=1, numKPoints ! Loop over kPoints
+        do l=1, potDim ! Loop over potential dimensions
+          ! Define hyperslab to read real part
+          call h5sselect_hyperslab_f(valeVale_dsid, H5S_SELECT_SET_F, &
+            & hslabStart, hslabCount, hdferr)
+
+          ! Read real part from hdf5 to temporary matrix
+          call h5dread_f(dset_id, H5T_NATIVE_DOUBLE, [localarray], 
+            & hslabdims, hdferr, file_space_id=fspaceid, &
+            & xfer_prp=transfer_properties)
+          
+          ! Redefine hyperslab to read imaginary part 
+          call h5sselect_hyperslab_f(valeVale_dsid, H5S_SELECT_SET_F, &
+            & hslabStart, hslabCount, hdferr)
+
+          ! Read imaginary part from hdf5 to temporary matrix
+          call h5dread_f(dset_id, H5T_NATIVE_DOUBLE, [localarray], 
+            & hslabdims, hdferr, file_space_id=fspaceid, &
+            & xfer_prp=transfer_properties)
+
+
+          ! Combine the two temporary double matrices into the local array 
+          ! (complex double matrix).
+        enddo ! pot dim loop
+      enddo ! kpoint loop
+    enddo ! blockCols
+  enddo ! blockRows
+
+end subroutine
+
+! This subroutine takes a given block for a process, and calculates the
+! mapping between the global and local proceses.
+!
+! For some process grid determined by the getBlockFact subroutine. We need
+! to extract data from the global array in such away to fit our grid
+! using the 2d block cyclic mapping specified in the SCALAPACK
+! documentation on netlib. http://netlib.org/scalapack/slug/node76.html
+subroutine globalToLocalMap(blockRow, blockCol, nbrow, nbcol, gridDim, &
+    & myinfo, blkFact, trailDim, glo, ghi, llo, lhi, ld)
+
+  implicit none
+
+  ! Define passed parameters
+  integer, intent(in) :: blockRow, blockCol ! Block row and col index to get
+  integer, intent(in) :: nbrow, nbcol ! Total Number of blocks
+  integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
+  integer, dimension(3), intent(in) :: myinfo  ! prow, pcol, mpirank
+  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
+  integer, dimension(2), intent(in) :: trailDim ! trailing dims
+  integer, dimension(2), intent(out) :: glo, ghi, llo, lhi
+  integer, dimension(2), intent(out) :: ld
+
+  ! Define local Variables
+  integer :: l,m
+
+  ! Using the equations in the documentation linked above, we can obtain
+  ! the following set of equations.
+  !  a=l*MB+x  I=(l*Pr + pr)*MB+x
+  !  b=m*NB+y  J=(m*Pc + pc)*NB+y
+  ! Where the coordinates in the local array are llo(1),llo(2), 
+  ! coordinates in global array are (I,J), coordinates of local block are 
+  ! (l,m), coordinates inside local block are (x,y), and process 
+  ! coordinates (pr,pc). For block size MBxNB, and process grid size PrxPc.
+  ! With the equation for I we can solve it twice with x=0, and 
+  ! x=MB-1, this will give us the upper left and lower right of the block.
+  ! This will be sufficient information to pull the block down from
+  ! the global array.
+  ! 
+  ! The upper left coordinate will be held by lo, and the lower right held
+  ! by hi. "+ 0" intentionally left in for clarity.
+  !
+  ! Lo dimensions need to be incremented by 1, because the math is based
+  ! off of a 0 index. Hi should calculate correctly.
+ 
+  ! l and m are a relic of a rewrite, left for clarity.
+  l = blockRow-1
+  m = blockCol-1
+
+  ! Upper left corner.
+  glo(1) = ((l*gridDim(1) + myInfo(1))*blkFact(1) + 0) + 1
+  glo(2) = ((m*gridDim(2) + myInfo(2))*blkFact(2) + 0) + 1
+  
+  ! Starting positions of local lo should be unnefected for every case
+  ! Read next comment.
+  llo(1) = (l*blkFact(1) + 0) + 1
+  llo(2) = (m*blkFact(2) + 0) + 1
+
+  ! If we are an irregular sized block we have to do a special get.
+  ! The special get has different ending indices than a normal block
+  ! of the exact specified dimensions. 
+  ! Should try to think about reordering conditions in terms of
+  ! frequency.
+  !
+  ! The first  condition is: If trailing cols and rows. It'll make
+  !                          A block smaller in both dimensions.
+  ! The second condition is: If trailing cols.
+  ! The third  condition is: If trailing rows.
+  ! The last   condition is: If normal full block
+  if ( sum(trailDim(:))==2 .and. (blockRow==nbrow) &
+    &                                        .and. (blockCol==nbcol) ) then
+    ! Lower right corner. 
+    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + trailDim(1)
+    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + trailDim(2)
+    ! Calculate local ending coordinates
+    lhi(1) = llo(1) + trailDim(1) 
+    lhi(2) = llo(2) + trailDim(2) 
+
+  else if ( (trailDim(2) > 0) .and. (blockCol==nbcol) ) then ! trailing cols
+    ! Lower right corner. 
+    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + blkFact(1)
+    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + trailDim(2)
+    ! Calculate local ending coordinates
+    lhi(1) = llo(1) + blkFact(1)
+    lhi(2) = llo(2) + trailDim(2)
+
+  else if ( (trailDim(1) > 0) .and. (blockRow==nbrow) ) then ! trailing rows
+    ! Lower right corner. 
+    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + trailDim(1)
+    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + blkFact(2)
+    ! Calculate local ending coordinates
+    lhi(1) = llo(1) + trailDim(1) 
+    lhi(2) = llo(2) + blkFact(1)  
+                           
+  else ! Normal Block
+    ! Lower right corner. 
+    ghi(1) = (l*gridDim(1) + myInfo(1))*blkFact(1) + blkFact(1)
+    ghi(2) = (m*gridDim(2) + myInfo(2))*blkFact(2) + blkFact(2)
+    ! Calculate local ending coordinates
+    lhi(1) = llo(1) + blkFact(1)
+    lhi(2) = llo(2) + blkFact(1)
+
+  endif
+  ! Set ld
+  ld(1) = (lhi(1)-llo(1)) + 1
+  ld(2) = (lhi(2)-llo(2)) + 1
+end subroutine globalToLocalMap 
+
+! This subroutine creates a scalapack context and initializes the grid
+subroutine initSl(slctxt, grimDim, myInfo)
+  implicit none
+
+  ! Define passed parameters
+  integer, intent(out) :: slctxt
+  integer, intent(inout), dimension(2) :: gridDim
+  integer, intent(inout), dimension(3) :: myInfo 
+  call BLACS_GET(-1,0, slctxt)
+  call BLACS_GRIDINIT(slctxt, 'r', gridDim(1), gridDim(2))
+  call BLACS_GRIDINFO(slctxt, gridDim(1), gridDim(2), myInfo(1), myInfo(2))
+
+end subroutine
+
 ! This subroutine creates the scalapack array descriptors for the local
 ! Matrices
 subroutine getArrDesc(slctxt, blkFact, localLD, desca, desb, descz)
@@ -353,27 +436,7 @@ subroutine getArrDesc(slctxt, blkFact, localLD, desca, desb, descz)
 end subroutine getArrDesc
 
 
-! This subroutine creates a scalapack context and initializes the grid
-subroutine initSl(slctxt, grimDim, myInfo)
-  implicit none
-
-  ! Define passed parameters
-  integer, intent(out) :: slctxt
-  integer, intent(inout), dimension(2) :: gridDim
-  integer, intent(inout), dimension(3) :: myInfo 
-  call BLACS_GET(-1,0, slctxt)
-  call BLACS_GRIDINIT(slctxt, 'r', gridDim(1), gridDim(2))
-  call BLACS_GRIDINFO(slctxt, gridDim(1), gridDim(2), myInfo(1), myInfo(2))
-end subroutine
-
-
-! This subroutine cleans up scalapack descriptors and contexts
-subroutine cleanUpSl(slctxt, desca, descb, descz)
-  implicit none
-
-end subroutine cleanUpSl
-
-! This subroutine servers as the main wrapper to the zhegvx lapack
+! This subroutine serves as the main interface/wrapper to the zhegvx lapack
 ! routine.
 subroutine sl_PZHEGVX(localA, localB, localZ, desca, descb, descz, &
     & myInfo, numprocs, gridDim, trailDim, valeDim, blkFact, eigenVals)
@@ -514,6 +577,70 @@ subroutine sl_PZHEGVX(localA, localB, localZ, desca, descb, descz, &
 
 end subroutine sl_PZHEGVX
 
+! This subroutine takes the computed wave function and write it to HDF5.
+! Because parallel writes on NFS are slow, we'll have process 0 store it's
+! sections and deallocate it's local array. Then we'll do a series of 
+! blocking MPI calls so that process zero can store it's information.
+subroutine writeWaveFunction()
+  implicit none
+
+  ! Define passed parameters
+
+  ! Define local variables
+  integer :: mpisize, mpierr
+  integer :: i ! loop variable
+
+  ! Have process zero store it's sections of the wavefunction.
+  ! If not process zero, put up barrier and wait till zero is done.
+  if (myinfo(3) == 0) then
+    call writeMatrixSection()
+    call MPI_BARRIER(mpierr)
+  else
+    call MPI_BARRIER(mpierr)
+  endif
+
+  ! Loop over the world (size-1) and pass information to process zero to
+  ! store.
+  do i=1, (mpisize-1)
+    ! if you're process zero receive local array section then write
+    if (myinfo(3) == 0) then
+      call recvLocalArray()
+
+      call writeMatrixSection()
+      
+    ! If you're process mpirank==i, send local array section
+    elseif (myinfo(3) == i) then
+      call sendLocalArray()
+
+    endif
+    ! Else if you're anyone else just hangout and wait for the other two
+    ! to catch up.
+    call MPI_BARRIER(mpierr)
+  enddo
+
+end subroutine writeWaveFunction
+
+! Subroutine to write a matrix section to HDF5. Should only be called by
+! process zero.
+subroutine writeMatrixSection(localArray, rankToWrite)
+  implicit none
+
+  ! Define passed parameters
+  complex, (kind=double) :: localArray
+  integer :: rankToWrite ! Rank that localArray belongs to. 
+
+
+end subroutine writeMatrixSection
+
+! Subroutine to handle receiving local arrays
+subroutine recvLocalArray()
+  implicit none
+end subroutine recvLocalArray
+
+! Subroutine to handle sending local array
+subroutine sendLocalArray()
+  implicit none
+end subroutine sendLocalArray
 
 
 ! This subroutine is responsible for making sure the eigenvalues are
@@ -523,66 +650,10 @@ subroutine distributeEigenVals()
 
 end subroutine
 
-
-! This subroutine is responsible for reading in the interaction matrices
-! from disk, and put them in global arrays.
-! Its operation should be similar to the writeValeVale subroutine in the
-! parallelSubs module, except in reverse.
-subroutine readHDF5_to_GA()
-  use MPI
-  use O_Kinds
-
+! This subroutine cleans up scalapack descriptors and contexts
+subroutine cleanUpSl(slctxt, desca, descb, descz)
   implicit none
 
-#include "mafdecls.fh"
-#include "global.fh"
-
-
-
-end subroutine readHDF5_to_GA
-
-! Luckily after parallelizing setup I made routines for reading in the
-! new hdf5 datasets, we can utilize these and then just put the resulting
-! matrix into a global array
-subroutine readMatrixToGA(dataSetID, matrixDims, ga_vv)
-  use MPI
-  use O_Kinds
-
-  implicit none
-
-#include "mafdecls.fh"
-#include "global.fh"
-
-  ! Define Passed parameters
-  integer (hid_t), intent(in) :: dataSetID
-  integer (hsize_t), dimension(2) :: matrixDims
-  integer, intent(inout) :: ga_vv ! Global array identifier
-
-  ! Define local variables
-  integer :: dim1, dim2A
-  real (kind=double), dimension(matrixDims(1),matrixDims(2) :: temp
-
-  ! Series of routines taken from secularEquation to be edited later
-  call readPackedMatrix(atomNucOverlap_did(i), packedValeVale, atomDims, &
-    & valeDim, valeDim)
-
-  call readPackedMatrixAccum(atomKEOverlap_did(i), packedValeVale, &
-    & tempPackedValeVale, atomDims, 0.0_double, valeDim, valeDim)
-
-  do j=1, potDim
-    call readPackedMatrixAccum(atomPotOverlap_did(i,j), packedaleVale, &
-        & tempPackedValeVale, atomDims, potCoeffs(j, spinDirection), &
-        & valeDim, valeDim)
-  enddo
-
-  call unpackMatrix(valeVale(:,:,1,spinDirection, packedValeVale, valeDim,0)
-
-  call readPackedMatrix(atomOverlap_did(i), packedValeVale, atomDims, &
-    & valeDim, valeDim)
-
-  call unpackMatrix(valeValeOL(:,:,1,1), packedValeVale,valeDim,0)
-
-
-end subroutine readMatrix
+end subroutine cleanUpSl
 
 end module O_SlSubs

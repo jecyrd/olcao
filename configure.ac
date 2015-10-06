@@ -64,10 +64,14 @@ AC_MSG_NOTICE
 AC_MSG_NOTICE([Checks for MPI])
 AC_MSG_NOTICE
 AX_MPI()
+if test "$HAVE_MPI" = ""; then
+  AC_MSG_ERROR([Unable to find MPI installation])
+fi
 
 dnl ######################################################################
 dnl
-dnl Define for whether hdf5 found
+dnl Define for whether hdf5 fortran found.
+dnl Look at macro for explanation of decisions made below.
 dnl
 dnl ######################################################################
 
@@ -75,10 +79,10 @@ AC_MSG_NOTICE
 AC_MSG_NOTICE([Checks for HDF5])
 AC_MSG_NOTICE
 AX_LIB_HDF5([parallel])
-if test "$with_hdf5" = "yes"; then
+if test "$with_hdf5_fortran" = "yes"; then
   FC="$HDF5_FC"
 else
-  AC_MSG_ERROR([Unable to find parallel HDF5 installation, required for olcao compilation])
+  AC_MSG_ERROR([Unable to find parallel HDF5, required for olcao compilation])
 fi
 
 dnl ######################################################################

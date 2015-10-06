@@ -242,7 +242,7 @@ subroutine readDistributedWaveFunction(localArr, nbrow, nbcol, gridDim,
   implicit none
 
   ! Define passed parameters
-  complex, (kind=double), intent(inout) :: localArr
+  complex (kind=double), intent(inout), dimension(:,:) :: localArr
   integer, intent(in) :: nbrow, nbcol ! Total Number of blocks
   integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
   integer, dimension(3), intent(in) :: myInfo  ! prow, pcol, mpirank
@@ -255,9 +255,11 @@ subroutine readDistributedWaveFunction(localArr, nbrow, nbcol, gridDim,
   integer :: mpisize, mpierr
   integer, dimension(2) :: glo, ghi, llo, lhi
   integer, dimension(2) :: ld
-  real, (kind=double), allocatable, dimension(:,:) :: tempReal
-  real, (kind=double), allocatable, dimension(:,:) :: tempImag
-  
+  real (kind=double), allocatable, dimension(:,:) :: tempReal
+  real (kind=double), allocatable, dimension(:,:) :: tempImag
+  real (kind=double), allocatable, dimension(:,:) :: tempRead
+
+  ! Obtain world size
   call MPI_COMM_SIZE(MPI_COMM_WORLD, mpisize, mpierr)
   
   ! Create Dataspace and open for access
@@ -283,7 +285,7 @@ subroutine readDistributedWaveFunction(localArr, nbrow, nbcol, gridDim,
     do j=1, nbcol ! Loop over blockCols
       ! Logical not of the condition above, because I didn't want to retab
       ! everything below.
-      if ( mod(i,mpisize)/=myInfo(1) .or. mod(j,mpisize)/=myInfo(2) then
+      if ( mod(i,mpisize)/=myInfo(1) .or. mod(j,mpisize)/=myInfo(2) ) then
         cycle
       endif
 
@@ -292,31 +294,59 @@ subroutine readDistributedWaveFunction(localArr, nbrow, nbcol, gridDim,
       call globalToLocalMap(i, j, nbrow, nbcol, gridDim, &
         & myInfo, blkfact, trailDim, glo, ghi, llo, lhi, ld)
 
+      allocate(tempRead(ld(1),ld(2)))
+      allocate(tempReal(ld(1),ld(2)))
+      allocate(tempImag(ld(2),ld(1)))
+
       do j=1, numKPoints ! Loop over kPoints
         do l=1, potDim ! Loop over potential dimensions
+          ! Zero out tempRead
+          tempRead(:,:) = 0.0_double
+
+          ! Set dimensions for real part
+          hslabstart = 
+          hslabcount = 
+
           ! Define hyperslab to read real part
           call h5sselect_hyperslab_f(valeVale_dsid, H5S_SELECT_SET_F, &
             & hslabStart, hslabCount, hdferr)
 
           ! Read real part from hdf5 to temporary matrix
-          call h5dread_f(dset_id, H5T_NATIVE_DOUBLE, [localarray], 
+          call h5dread_f(dset_id, H5T_NATIVE_DOUBLE, tempRead, 
             & hslabdims, hdferr, file_space_id=fspaceid, &
             & xfer_prp=transfer_properties)
+
+          ! Accumulate real part into tempReal
+          tempReal = tempReal + tempRead
+
+          ! Zero out tempRead
+          tempRead(:,:) = 0.0_double
+
+          ! Set transposed dimensions for imaginary part
+          hslabstart = 
+          hslabcount = 
           
           ! Redefine hyperslab to read imaginary part 
           call h5sselect_hyperslab_f(valeVale_dsid, H5S_SELECT_SET_F, &
             & hslabStart, hslabCount, hdferr)
 
           ! Read imaginary part from hdf5 to temporary matrix
-          call h5dread_f(dset_id, H5T_NATIVE_DOUBLE, [localarray], 
+          call h5dread_f(dset_id, H5T_NATIVE_DOUBLE, tempRead, 
             & hslabdims, hdferr, file_space_id=fspaceid, &
             & xfer_prp=transfer_properties)
 
+          ! Accumulate imaginary part into tempImag
+          tempImag = tempImag + tempRead
 
           ! Combine the two temporary double matrices into the local array 
           ! (complex double matrix).
+          call storeIntoLocal(localArr, tempReal, tempImag)
         enddo ! pot dim loop
       enddo ! kpoint loop
+
+      deallocate(tempRead)
+      deallocate(tempReal)
+      deallocate(tempImag)
     enddo ! blockCols
   enddo ! blockRows
 
@@ -428,6 +458,18 @@ subroutine globalToLocalMap(blockRow, blockCol, nbrow, nbcol, gridDim, &
   ld(1) = (lhi(1)-llo(1)) + 1
   ld(2) = (lhi(2)-llo(2)) + 1
 end subroutine globalToLocalMap 
+
+subroutine storeIntoLocal(localArr, tempReal, tempImag)
+  implicit none
+
+  ! Define passed parameters
+  complex, (kind=double), intent(inout), dimension(:,:) :: localArr
+  real, (kind=double), intent(inout), dimension(:,:) :: tempReal
+  real, (kind=double), intent(inout), dimension(:,:) :: tempImag
+
+
+end subroutine
+
 
 ! This subroutine creates a scalapack context and initializes the grid
 subroutine initSl(slctxt, grimDim, myInfo)

@@ -8,7 +8,7 @@
 export BRANCH="jolcao"
 
 #Root directory of the OLCAO program suite.
-export OLCAO_DIR="$HOME/devel/git-repos/olcao/$BRANCH"
+export OLCAO_DIR="$HOME/devel/olcao/$BRANCH"
 
 #Location of binary executables.
 export OLCAO_BIN="$OLCAO_DIR/bin"
@@ -17,7 +17,7 @@ export OLCAO_BIN="$OLCAO_DIR/bin"
 export OLCAO_DATA="$OLCAO_DIR/share"
 
 #Location for all intermediate directories.
-export OLCAO_TEMP="$HOME/devel/git-repos/olcao/scratch/$BRANCH"
+export OLCAO_TEMP="$HOME/devel/olcao/scratch/$BRANCH"
 
 export PATH=$OLCAO_BIN:$PATH
 export PERL5LIB=$OLCAO_BIN/perl5:$PERL5LIB

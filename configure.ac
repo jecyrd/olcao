@@ -97,7 +97,7 @@ dnl ######################################################################
 
 dnl if test $ac_cv_have_hdf5 = yes; then
 dnl   AC_DEFINE(HAVE_HDF5,1,Define to 1 if you have the hdf5 library (-lhdf5).)
-  FC=h5pfc
+  FC=h5fc
   AC_SUBST(FC)
 dnl fi
 

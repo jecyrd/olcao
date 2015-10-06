@@ -1,7 +1,20 @@
 bin_PROGRAMS = makekpoints atomSCF gaussFit contract applySpaceGroup OLCAOkkc \
    OLCAOrhoV gOLCAOsetup gOLCAOmain gOLCAOintg gOLCAOband gOLCAOdos \
    gOLCAObond gOLCAOoptc gOLCAOwave OLCAOsetup OLCAOmain OLCAOintg OLCAOband \
-   OLCAOdos OLCAObond OLCAOoptc OLCAOwave pOLCAOsetup pOLCAOmain compHDF5
+   OLCAOdos OLCAObond OLCAOoptc OLCAOwave
+
+clean-local:
+	rm -f *.mod
+
+real:	gOLCAOsetup gOLCAOmain gOLCAOintg gOLCAOband gOLCAObond gOLCAOoptc \
+      gOLCAOdos gOLCAOwave
+
+complex:	OLCAOsetup OLCAOmain OLCAOintg OLCAOband OLCAObond OLCAOoptc \
+         OLCAOdos OLCAOwave
+
+aux: makekpoints atomSCF gaussFit contract applySpaceGroup OLCAOkkc OLCAOrhoV
+
+all: real complex aux
 
 gOLCAOsetup_CPPFLAGS = -DGAMMA
 gOLCAOmain_CPPFLAGS  = -DGAMMA
@@ -41,111 +54,6 @@ OLCAOkkc_SOURCES = src/kinds.f90 src/constants.f90 \
 
 OLCAOrhoV_SOURCES = src/kinds.f90 src/constants.f90 \
    src/olcao/auxiliary/OLCAOrhoV.f90
-
-gOLCAOsetup_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
-   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
-   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
-   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
-   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
-   src/olcao/basis.f90 src/olcao/kpoints.f90 src/olcao/gaussRelations.f90 \
-   src/olcao/gaussIntegrals.f90 src/olcao/hdf5SetupIntg.F90 \
-   src/olcao/hdf5SetupElec.f90 src/olcao/hdf5SetupExco.f90 \
-   src/olcao/hdf5Setup.f90 src/olcao/exchCorr.f90 src/olcao/elecStat.f90 \
-   src/olcao/intgOrtho.F90 src/olcao/intgSaving.F90 src/olcao/integralsSCF.F90 \
-   src/olcao/coreCharge.f90 src/olcao/input.f90 src/olcao/OLCAO_Setup.f90 \
-   src/olcao/OLCAO_SetupWrap.f90
-gOLCAOmain_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
-   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
-   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
-   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
-   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
-   src/olcao/kpoints.f90 src/olcao/hdf5SetupIntg.F90 \
-   src/olcao/hdf5SetupElec.f90 src/olcao/hdf5SetupExco.f90 \
-   src/olcao/hdf5Setup.f90 src/olcao/hdf5MainEval.f90 \
-   src/olcao/hdf5MainEvec.F90 src/olcao/hdf5Main.f90 \
-   src/olcao/hdf5PSCFBand.F90 src/olcao/exchCorr.f90 src/olcao/elecStat.f90 \
-   src/olcao/matrixSubs.F90 src/olcao/input.f90 src/olcao/secularEqn.F90 \
-   src/olcao/populate.F90 src/olcao/valeCharge.F90 \
-   src/olcao/potentialUpdate.f90 src/olcao/dos.F90 src/olcao/bond.F90 \
-   src/olcao/bond3C.F90 src/olcao/OLCAO_Main.f90 src/olcao/OLCAO_MainWrap.f90
-gOLCAOintg_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
-   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
-   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
-   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
-   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
-   src/olcao/basis.f90 src/olcao/kpoints.f90 src/olcao/gaussIntegrals.f90 \
-   src/olcao/hdf5PSCFIntg.f90 src/olcao/hdf5SetupIntg.F90 \
-   src/olcao/hdf5SetupElec.f90 src/olcao/hdf5SetupExco.f90 \
-   src/olcao/hdf5Setup.f90 src/olcao/exchCorr.f90 src/olcao/intgOrtho.F90 \
-   src/olcao/intgSaving.F90 src/olcao/integralsPSCF.F90 src/olcao/input.f90 \
-   src/olcao/OLCAO_Intg.f90 src/olcao/OLCAO_IntgWrap.f90
-gOLCAOband_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
-   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
-   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
-   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
-   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
-   src/olcao/basis.f90 src/olcao/kpoints.f90 src/olcao/gaussIntegrals.f90 \
-   src/olcao/hdf5PSCFBand.F90 src/olcao/hdf5PSCFIntg.f90 \
-   src/olcao/hdf5SetupIntg.F90 src/olcao/hdf5SetupElec.f90 \
-   src/olcao/hdf5SetupExco.f90 src/olcao/hdf5Setup.f90 \
-   src/olcao/hdf5MainEval.f90 src/olcao/hdf5MainEvec.F90 \
-   src/olcao/hdf5Main.f90 src/olcao/exchCorr.f90 src/olcao/intgOrtho.F90 \
-   src/olcao/intgSaving.F90 src/olcao/integralsPSCF.F90 \
-   src/olcao/matrixSubs.F90 src/olcao/input.f90 src/olcao/secularEqn.F90 \
-   src/olcao/populate.F90 src/olcao/OLCAO_Band.F90 src/olcao/OLCAO_BandWrap.f90
-gOLCAOdos_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
-   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
-   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
-   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
-   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
-   src/olcao/kpoints.f90 src/olcao/hdf5PSCFBand.F90 \
-   src/olcao/hdf5SetupIntg.F90 src/olcao/hdf5SetupElec.f90 \
-   src/olcao/hdf5SetupExco.f90 src/olcao/hdf5Setup.f90 \
-   src/olcao/hdf5MainEval.f90 src/olcao/hdf5MainEvec.F90 \
-   src/olcao/hdf5Main.f90 src/olcao/exchCorr.f90 src/olcao/matrixSubs.F90 \
-   src/olcao/input.f90 src/olcao/secularEqn.F90 src/olcao/populate.F90 \
-   src/olcao/dos.F90 src/olcao/OLCAO_DOS.f90
-gOLCAObond_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
-   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
-   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
-   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
-   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
-   src/olcao/kpoints.f90 src/olcao/hdf5PSCFBand.F90 \
-   src/olcao/hdf5SetupIntg.F90 src/olcao/hdf5SetupElec.f90 \
-   src/olcao/hdf5SetupExco.f90 src/olcao/hdf5Setup.f90 \
-   src/olcao/hdf5MainEval.f90 src/olcao/hdf5MainEvec.F90 \
-   src/olcao/hdf5Main.f90 src/olcao/exchCorr.f90 src/olcao/matrixSubs.F90 \
-   src/olcao/input.f90 src/olcao/secularEqn.F90 src/olcao/populate.F90 \
-   src/olcao/bond.F90 src/olcao/bond3C.F90 src/olcao/OLCAO_Bond.f90
-gOLCAOoptc_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
-   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
-   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
-   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
-   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
-   src/olcao/basis.f90 src/olcao/kpoints.f90 src/olcao/gaussIntegrals.f90 \
-   src/olcao/hdf5PSCFBand.F90 src/olcao/hdf5PSCFIntg.f90 \
-   src/olcao/hdf5SetupIntg.F90 src/olcao/hdf5SetupElec.f90 \
-   src/olcao/hdf5SetupExco.f90 src/olcao/hdf5Setup.f90 \
-   src/olcao/hdf5MainEval.f90 src/olcao/hdf5MainEvec.F90 \
-   src/olcao/hdf5Main.f90 src/olcao/exchCorr.f90 src/olcao/intgOrtho.F90 \
-   src/olcao/intgSaving.F90 src/olcao/integralsPSCF.F90 \
-   src/olcao/matrixSubs.F90 src/olcao/input.f90 src/olcao/secularEqn.F90 \
-   src/olcao/populate.F90 \
-   src/olcao/optc.F90 src/olcao/optcPrint.F90 src/olcao/OLCAO_Optc.f90 \
-   src/olcao/OLCAO_OptcWrap.f90
-gOLCAOwave_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
-   src/elementData.f90 src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 \
-   src/olcao/sortSubs.f90 src/olcao/interfaces.F90 src/olcao/timeStamps.f90 \
-   src/olcao/commandLine.f90 src/olcao/potSites.f90 src/olcao/potTypes.f90 \
-   src/olcao/atomicTypes.f90 src/olcao/atomicSites.f90 src/olcao/potential.f90 \
-   src/olcao/lattice.f90 src/olcao/basis.f90 src/olcao/kpoints.f90 \
-   src/olcao/hdf5PSCFBand.F90 src/olcao/hdf5SetupIntg.F90 \
-   src/olcao/hdf5SetupElec.f90 src/olcao/hdf5SetupExco.f90 \
-   src/olcao/hdf5Setup.f90 src/olcao/hdf5MainEval.f90 \
-   src/olcao/hdf5MainEvec.F90 src/olcao/hdf5Main.f90 src/olcao/exchCorr.f90 \
-   src/olcao/matrixSubs.F90 src/olcao/input.f90 src/olcao/secularEqn.F90 \
-   src/olcao/populate.F90 src/olcao/openDX.f90 src/olcao/wave.F90 \
-   src/olcao/OLCAO_Wave.f90
 
 OLCAOsetup_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
    src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
@@ -254,67 +162,137 @@ OLCAOwave_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
    src/olcao/populate.F90 src/olcao/openDX.f90 src/olcao/wave.F90 \
    src/olcao/OLCAO_Wave.f90
 
-# Parallel Executables
-pOLCAOsetup_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
-   src/polcao/stringSubs.f90 src/polcao/mathSubs.f90 \
-	 src/polcao/sortSubs.f90 src/polcao/interfaces.F90 \
-   src/polcao/timeStamps.F90 src/polcao/commandLine.f90 \
-	 src/polcao/potSites.f90 src/polcao/potTypes.f90 \
-   src/polcao/atomicTypes.f90 src/polcao/atomicSites.f90 \
-	 src/polcao/potential.f90 src/polcao/lattice.f90 src/polcao/basis.f90 \
-	 src/polcao/kpoints.f90 src/polcao/gaussRelations.f90 \
-	 src/polcao/gaussIntegrals.f90 src/polcao/hdf5SetupIntg.F90 \
-	 src/polcao/hdf5SetupElec.f90 src/polcao/hdf5SetupExco.f90 \
-   src/polcao/hdf5Setup.f90 src/polcao/parallelSubs.F90 \
-	 src/polcao/exchCorr.f90 src/polcao/elecStat.f90 \
-	 src/polcao/intgOrtho.F90 src/polcao/intgSaving.F90 \
-	 src/polcao/integralsSCF.F90 src/polcao/coreCharge.f90 \
-	 src/polcao/input.F90 src/polcao/OLCAO_Setup.F90 \
-	 src/polcao/OLCAO_SetupWrap.f90
-
-pOLCAOmain_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
-   src/polcao/stringSubs.f90 src/polcao/mathSubs.f90 \
-	 src/polcao/sortSubs.f90 src/polcao/interfaces.F90 \
-	 src/polcao/timeStamps.F90 src/polcao/commandLine.f90 \
-	 src/polcao/potSites.f90 src/polcao/potTypes.f90 \
-	 src/polcao/atomicTypes.f90 src/polcao/atomicSites.f90 \
-	 src/polcao/potential.f90 src/polcao/lattice.f90 src/polcao/kpoints.f90 \
-	 src/polcao/hdf5SetupIntg.F90 src/polcao/hdf5SetupElec.f90 \
-   src/polcao/hdf5SetupExco.f90 src/polcao/hdf5Setup.f90 \
-	 src/polcao/parallelSubs.F90 src/polcao/exchCorr.f90 \
-	 src/polcao/input.F90 src/polcao/hdf5MainEval.f90 \
-   src/polcao/hdf5MainEvect.F90 src/polcao/hdf5Main.f90 \
-	 src/polcao/hdf5PSCFBand.F90 src/polcao/elecStat.f90 \
-	 src/polcao/matrixSubs.F90 src/polcao/secularEqn.F90 \
-	 src/polcao/populate.F90 src/polcao/valeCharge.F90 \
-	 src/polcao/potentialUpdate.f90 src/polcao/dos.F90 src/polcao/bond.F90 \
-	 src/polcao/OLCAO_Main.f90 src/polcao/OLCAO_MainWrap.f90
-
-# Executables for debugging
-compHDF5_SOURCES= src/debug-tools/parSerComp/dataStructs.f90 \
-   src/debug-tools/parSerComp/hdf5Routines.f90 \
-   src/debug-tools/parSerComp/matSubs.f90 \
-	 src/debug-tools/parSerComp/compMod.f90 \
-	 src/debug-tools/parSerComp/parSerComp.f90
+gOLCAOsetup_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
+   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
+   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
+   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
+   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
+   src/olcao/basis.f90 src/olcao/kpoints.f90 src/olcao/gaussRelations.f90 \
+   src/olcao/gaussIntegrals.f90 src/olcao/hdf5SetupIntg.F90 \
+   src/olcao/hdf5SetupElec.f90 src/olcao/hdf5SetupExco.f90 \
+   src/olcao/hdf5Setup.f90 src/olcao/exchCorr.f90 src/olcao/elecStat.f90 \
+   src/olcao/intgOrtho.F90 src/olcao/intgSaving.F90 src/olcao/integralsSCF.F90 \
+   src/olcao/coreCharge.f90 src/olcao/input.f90 src/olcao/OLCAO_Setup.f90 \
+   src/olcao/OLCAO_SetupWrap.f90
+gOLCAOmain_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
+   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
+   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
+   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
+   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
+   src/olcao/kpoints.f90 src/olcao/hdf5SetupIntg.F90 \
+   src/olcao/hdf5SetupElec.f90 src/olcao/hdf5SetupExco.f90 \
+   src/olcao/hdf5Setup.f90 src/olcao/hdf5MainEval.f90 \
+   src/olcao/hdf5MainEvec.F90 src/olcao/hdf5Main.f90 \
+   src/olcao/hdf5PSCFBand.F90 src/olcao/exchCorr.f90 src/olcao/elecStat.f90 \
+   src/olcao/matrixSubs.F90 src/olcao/input.f90 src/olcao/secularEqn.F90 \
+   src/olcao/populate.F90 src/olcao/valeCharge.F90 \
+   src/olcao/potentialUpdate.f90 src/olcao/dos.F90 src/olcao/bond.F90 \
+   src/olcao/bond3C.F90 src/olcao/OLCAO_Main.f90 src/olcao/OLCAO_MainWrap.f90
+gOLCAOintg_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
+   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
+   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
+   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
+   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
+   src/olcao/basis.f90 src/olcao/kpoints.f90 src/olcao/gaussIntegrals.f90 \
+   src/olcao/hdf5PSCFIntg.f90 src/olcao/hdf5SetupIntg.F90 \
+   src/olcao/hdf5SetupElec.f90 src/olcao/hdf5SetupExco.f90 \
+   src/olcao/hdf5Setup.f90 src/olcao/exchCorr.f90 src/olcao/intgOrtho.F90 \
+   src/olcao/intgSaving.F90 src/olcao/integralsPSCF.F90 src/olcao/input.f90 \
+   src/olcao/OLCAO_Intg.f90 src/olcao/OLCAO_IntgWrap.f90
+gOLCAOband_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
+   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
+   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
+   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
+   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
+   src/olcao/basis.f90 src/olcao/kpoints.f90 src/olcao/gaussIntegrals.f90 \
+   src/olcao/hdf5PSCFBand.F90 src/olcao/hdf5PSCFIntg.f90 \
+   src/olcao/hdf5SetupIntg.F90 src/olcao/hdf5SetupElec.f90 \
+   src/olcao/hdf5SetupExco.f90 src/olcao/hdf5Setup.f90 \
+   src/olcao/hdf5MainEval.f90 src/olcao/hdf5MainEvec.F90 \
+   src/olcao/hdf5Main.f90 src/olcao/exchCorr.f90 src/olcao/intgOrtho.F90 \
+   src/olcao/intgSaving.F90 src/olcao/integralsPSCF.F90 \
+   src/olcao/matrixSubs.F90 src/olcao/input.f90 src/olcao/secularEqn.F90 \
+   src/olcao/populate.F90 src/olcao/OLCAO_Band.F90 src/olcao/OLCAO_BandWrap.f90
+gOLCAOdos_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
+   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
+   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
+   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
+   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
+   src/olcao/kpoints.f90 src/olcao/hdf5PSCFBand.F90 \
+   src/olcao/hdf5SetupIntg.F90 src/olcao/hdf5SetupElec.f90 \
+   src/olcao/hdf5SetupExco.f90 src/olcao/hdf5Setup.f90 \
+   src/olcao/hdf5MainEval.f90 src/olcao/hdf5MainEvec.F90 \
+   src/olcao/hdf5Main.f90 src/olcao/exchCorr.f90 src/olcao/matrixSubs.F90 \
+   src/olcao/input.f90 src/olcao/secularEqn.F90 src/olcao/populate.F90 \
+   src/olcao/dos.F90 src/olcao/OLCAO_DOS.f90
+gOLCAObond_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
+   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
+   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
+   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
+   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
+   src/olcao/kpoints.f90 src/olcao/hdf5PSCFBand.F90 \
+   src/olcao/hdf5SetupIntg.F90 src/olcao/hdf5SetupElec.f90 \
+   src/olcao/hdf5SetupExco.f90 src/olcao/hdf5Setup.f90 \
+   src/olcao/hdf5MainEval.f90 src/olcao/hdf5MainEvec.F90 \
+   src/olcao/hdf5Main.f90 src/olcao/exchCorr.f90 src/olcao/matrixSubs.F90 \
+   src/olcao/input.f90 src/olcao/secularEqn.F90 src/olcao/populate.F90 \
+   src/olcao/bond.F90 src/olcao/bond3C.F90 src/olcao/OLCAO_Bond.f90
+gOLCAOoptc_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
+   src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 src/olcao/sortSubs.f90 \
+   src/olcao/interfaces.F90 src/olcao/timeStamps.f90 src/olcao/commandLine.f90 \
+   src/olcao/potSites.f90 src/olcao/potTypes.f90 src/olcao/atomicTypes.f90 \
+   src/olcao/atomicSites.f90 src/olcao/potential.f90 src/olcao/lattice.f90 \
+   src/olcao/basis.f90 src/olcao/kpoints.f90 src/olcao/gaussIntegrals.f90 \
+   src/olcao/hdf5PSCFBand.F90 src/olcao/hdf5PSCFIntg.f90 \
+   src/olcao/hdf5SetupIntg.F90 src/olcao/hdf5SetupElec.f90 \
+   src/olcao/hdf5SetupExco.f90 src/olcao/hdf5Setup.f90 \
+   src/olcao/hdf5MainEval.f90 src/olcao/hdf5MainEvec.F90 \
+   src/olcao/hdf5Main.f90 src/olcao/exchCorr.f90 src/olcao/intgOrtho.F90 \
+   src/olcao/intgSaving.F90 src/olcao/integralsPSCF.F90 \
+   src/olcao/matrixSubs.F90 src/olcao/input.f90 src/olcao/secularEqn.F90 \
+   src/olcao/populate.F90 \
+   src/olcao/optc.F90 src/olcao/optcPrint.F90 src/olcao/OLCAO_Optc.f90 \
+   src/olcao/OLCAO_OptcWrap.f90
+gOLCAOwave_SOURCES = src/kinds.f90 src/constants.f90 src/readData.f90 \
+   src/elementData.f90 src/olcao/stringSubs.f90 src/olcao/mathSubs.f90 \
+   src/olcao/sortSubs.f90 src/olcao/interfaces.F90 src/olcao/timeStamps.f90 \
+   src/olcao/commandLine.f90 src/olcao/potSites.f90 src/olcao/potTypes.f90 \
+   src/olcao/atomicTypes.f90 src/olcao/atomicSites.f90 src/olcao/potential.f90 \
+   src/olcao/lattice.f90 src/olcao/basis.f90 src/olcao/kpoints.f90 \
+   src/olcao/hdf5PSCFBand.F90 src/olcao/hdf5SetupIntg.F90 \
+   src/olcao/hdf5SetupElec.f90 src/olcao/hdf5SetupExco.f90 \
+   src/olcao/hdf5Setup.f90 src/olcao/hdf5MainEval.f90 \
+   src/olcao/hdf5MainEvec.F90 src/olcao/hdf5Main.f90 src/olcao/exchCorr.f90 \
+   src/olcao/matrixSubs.F90 src/olcao/input.f90 src/olcao/secularEqn.F90 \
+   src/olcao/populate.F90 src/olcao/openDX.f90 src/olcao/wave.F90 \
+   src/olcao/OLCAO_Wave.f90
 
 dist_data_DATA = src/data/atomicBDB.tgz src/data/atomicPDB.tgz \
    src/data/spaceDB.tgz src/data/sybdDB.tgz src/data/elements.dat \
    src/data/xc_code.dat
 
-dist_bin_SCRIPTS = src/scripts/appendCol src/scripts/atomPosDX \
+dist_bin_SCRIPTS = src/scripts/addAtoms src/scripts/appendCol \
+   src/scripts/atomPosDX \
    src/scripts/batchChange src/scripts/batchClean src/scripts/batchSub \
-   src/scripts/bondAnalysis src/scripts/cif2olcao src/scripts/collectSpectra \
-   src/scripts/copyInputs src/scripts/gaussOverlapRT src/scripts/insert3cbo \
-   src/scripts/intGen src/scripts/lmp2skl src/scripts/makeBDB \
-   src/scripts/makeBOND src/scripts/makeFittedRhoV src/scripts/makeinput \
-   src/scripts/makePDOS src/scripts/makePotDB src/scripts/makeSGDB \
-   src/scripts/makeSYBD src/scripts/massSubmit src/scripts/mkdirhier \
-   src/scripts/normalize src/scripts/olcao src/scripts/olcao.py \
-   src/scripts/olcaoObject.py src/scripts/olcaoStructures.py \
+   src/scripts/bondAnalysis \
+   src/scripts/cif2olcao src/scripts/collectSpectra src/scripts/copyInputs \
+   src/scripts/dump2skl \
+   src/scripts/gaussOverlapRT \
+   src/scripts/insert3cbo src/scripts/intGen \
+   src/scripts/lmp2skl src/scripts/makeBDB src/scripts/makeBOND \
+   src/scripts/makeFittedRhoV src/scripts/makeinput src/scripts/makePDOS \
+   src/scripts/makePotDB src/scripts/makeSGDB src/scripts/makeSYBD \
+   src/scripts/massGather src/scripts/massPrep src/scripts/massSubmit \
+   src/scripts/mkdirhier src/scripts/modStruct \
+   src/scripts/normalize \
+   src/scripts/olcao src/scripts/olcaoObject.py src/scripts/olcao.py \
+   src/scripts/olcaoStructures.py \
    src/scripts/pdb2skl src/scripts/plotgraph src/scripts/polcao \
-   src/scripts/rpdf src/scripts/runIsoAtoms src/scripts/scanSpectra \
-   src/scripts/selectSYBD src/scripts/skl2vasp src/scripts/spectra2ODX \
-   src/scripts/unpackOLCAODB src/scripts/vasp2skl \
+   src/scripts/rpdf src/scripts/runIsoAtoms \
+   src/scripts/scanSpectra src/scripts/selectSYBD src/scripts/skl2vasp \
+   src/scripts/spectra2ODX \
+   src/scripts/unpackOLCAODB \
+   src/scripts/vasp2skl \
    src/scripts/xcMesh src/scripts/xyz2skl
 
 dist_perllib_SCRIPTS = src/scripts/ElementData.pm \

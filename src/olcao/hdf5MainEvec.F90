@@ -1,4 +1,4 @@
-module O_MainEVectHDF5
+module O_MainEVecHDF5
 
    ! Use the HDF5 module (for hsize_t and hid_t).
    use HDF5
@@ -39,16 +39,16 @@ module O_MainEVectHDF5
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initMainEVectHDF5 (main_fid,numStates)
+subroutine initMainEVecHDF5 (main_fid,numStates)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_Kinds
 
    ! Import necessary object modules.
-   use O_KPoints     ! For numKPoints
-   use O_AtomicSites ! For valeDim
-   use O_CommandLine ! For spin (not anymore)
-   use O_Potential   ! For spin
+   use O_KPoints, only: numKPoints
+   use O_AtomicSites, only: valeDim
+   use O_Potential, only: spin
 
    ! Define the passed parameters.
    integer(hid_t) :: main_fid
@@ -130,18 +130,17 @@ subroutine initMainEVectHDF5 (main_fid,numStates)
       enddo
    enddo
 
-end subroutine initMainEVectHDF5 
+end subroutine initMainEVecHDF5 
 
 
-subroutine closeMainEVectHDF5
+subroutine closeMainEVecHDF5
 
    ! Import any necessary definition modules.
    use HDF5
 
    ! Import necessary object modules.
-   use O_KPoints     ! For numKPoints
-   use O_CommandLine ! For spin (not anymore)
-   use O_Potential   ! For spin
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: spin
 
    ! Make sure that no variables are implicitly declared.
    implicit none
@@ -179,7 +178,7 @@ subroutine closeMainEVectHDF5
    ! Deallocate unnecessary array.
    deallocate (eigenVectors_did)
 
-end subroutine closeMainEVectHDF5
+end subroutine closeMainEVecHDF5
 
 
-end module O_MainEVectHDF5
+end module O_MainEVecHDF5

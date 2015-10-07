@@ -63,7 +63,7 @@ dnl ######################################################################
 AC_MSG_NOTICE
 AC_MSG_NOTICE([Checks for MPI])
 AC_MSG_NOTICE
-AX_MPI([echo $HAVE_MPI])
+#AX_MPI([echo $HAVE_MPI])
 #if test "$HAVE_MPI" = ""; then
 #  AC_MSG_ERROR([Unable to find MPI installation])
 #fi

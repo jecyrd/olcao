@@ -60,9 +60,9 @@ dnl Define for whether MPI found
 dnl
 dnl ######################################################################
 
-AC_MSG_NOTICE
-AC_MSG_NOTICE([Checks for MPI])
-AC_MSG_NOTICE
+#AC_MSG_NOTICE
+#AC_MSG_NOTICE([Checks for MPI])
+#AC_MSG_NOTICE
 #AX_MPI([echo $HAVE_MPI])
 #if test "$HAVE_MPI" = ""; then
 #  AC_MSG_ERROR([Unable to find MPI installation])
@@ -80,7 +80,8 @@ AC_MSG_NOTICE([Checks for HDF5])
 AC_MSG_NOTICE
 AX_LIB_HDF5([parallel])
 if test "$with_hdf5_fortran" = "yes"; then
-  FC="$HDF5_FC"
+  FC="$H5FC"
+  AC_MSG_NOTICE([Found h5pfc at "$H5FC"])
 else
   AC_MSG_ERROR([Unable to find parallel HDF5, required for olcao compilation])
 fi

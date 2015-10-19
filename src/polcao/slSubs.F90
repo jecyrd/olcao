@@ -703,12 +703,21 @@ end subroutine writeMatrixSection
 
 ! Subroutine to handle receiving local arrays
 subroutine recvLocalArray()
+  use MPI
+
   implicit none
+
+  call MPI_RECV(buffer, count, datatype, source, tag, comm, status, ierror)
+  
 end subroutine recvLocalArray
 
 ! Subroutine to handle sending local array
 subroutine sendLocalArray()
+  use MPI
+
   implicit none
+
+  call MPI_SEND(buffer, count, datatype, dest, tag, comm, ierror)
 end subroutine sendLocalArray
 
 

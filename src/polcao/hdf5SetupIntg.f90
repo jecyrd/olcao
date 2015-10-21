@@ -38,11 +38,11 @@ module O_SetupIntegralsHDF5
    !   list.
    integer(hid_t) :: valeVale_plid
 
-   ! Create a file transfer property list ID
-   integer (hid_t) :: valeVale_xferpid
-
-   ! Define arrays that hold the dimensions of the datasets.
+   ! Define array that holds the dimensions of the dataset.
    integer(hsize_t), dimension (2) :: atomDims
+
+   ! Define array that holds the dimensions of the chunk.
+   integer (hsize_t), dimension (2) :: atomDimsChunk
 
    ! The number of datasets under each of the atomIntgGroup groups will
    !   vary depending on the problem.  (# of kpoints, potential dimension).
@@ -66,12 +66,9 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    use MPI
 
    ! Import necessary object modules.
-   use O_KPoints     ! For numKPoints
-   use O_Potential   ! For potDim
-   use O_AtomicSites ! For valeDima
-
-   ! Make sure no funny variables are declared
-   implicit none
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: potDim
+   use O_AtomicSites, only: valeDim
 
    ! Define the passed parameters.
    integer(hid_t) :: setup_fid
@@ -79,7 +76,6 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    ! Define local variables.
    integer :: i,j
    integer :: hdferr
-   integer(hsize_t), dimension(2) :: chunkDims
    character*30 :: currentName
    integer :: mpiSize, mpiRank, mpierr
 
@@ -87,16 +83,58 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    call MPI_COMM_SIZE(MPI_COMM_WORLD, mpiSize, mpierr)
 
    ! Initialize data structure dimensions.
-#ifndef GAMMA
-   !atomDims(1) = 2 ! Real and imaginary are needed.
+
+   ! These are the dimensions of any interaction matrix as stored on disk.
    atomDims(1) = valeDim
    atomDims(2) = valeDim
-#else
-   atomDims(1) = 1 ! Real needed only
-   atomDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
-#endif
-   chunkDims(1) = atomDims(1)/mpiSize
-   chunkDims(2) = atomDims(2)/mpiSize
+
+   ! We have a couple of complications.
+   ! First, in the current parallel algorithm there is a distributed global
+   !   array that each process will contribute to. Initially each process
+   !   computes a subset of the matrix elements and throws that subset up
+   !   into the GA. Then each process grabs a different portion of the GA
+   !   for the purpose of orthogonalization, participates in the
+   !   orthogonalization calculation, and stores its result back into the
+   !   GA. Finally, *one* process will pull down pieces of the GA and
+   !   write them to disk serially. The only time that HDF5 enters is for
+   !   the time that the one process writes to disk.
+   ! Second complication: the one process cannot hold the entire matrix
+   !   in memory at once because it will often be too large. Therefore,
+   !   it needs to only pull down chunks of the matrix from the GA and
+   !   write those. Obviously, it would like to pull down chunk sizes
+   !   that are as large as possible to make efficient use of the cache
+   !   and the HDF5 compression routines (that operate only across a
+   !   chunk).
+   ! Third complication: there is a maximum chunk size (as of the current
+   !   version of HDF5 that is on the order of 2GB). Therefore, I don't want
+   !   to have a number of chunk elements that is greater than 250M (assuming
+   !   that 8-byte reals are being stored).
+   ! Resolution: check that the chunk size is not too large (the assumption
+   !   here is that the number being stored are 8 byte reals and that we
+   !   should not go over 2 billion bytes. Let x=y=valeDim and a=b=chunkDim
+   !   for simple notation here. So if x*y > 250M and we want a*b < 250M but
+   !   of a size such that n*(a*b) is only slightly > x*y where n is a perfect
+   !   square (4,9,16, etc.) then we need to think carefully. We want to
+   !   maximize the chunk size, but not go overboard or else we will have
+   !   some huge chunks just to cover some thin border regions.
+   if ((atomDims(1) * atomDims(2)) > 250000000) then
+      i = 1
+      do while (1)
+         i = i + 1
+         if (mod(atomDims(1),i) == 0) then
+            atomDimsChunk(1) = (atomDims(1) / i)
+         else
+            atomDimsChunk(1) = (atomDims(1) / i) + 1
+         endif
+         if ((atomDimsChunk(1)*atomDimsChunk(1)) < 250000000) then
+             exit
+         endif
+      enddo
+      atomDimsChunk(2) = atomDimsChunk(1)
+   else ! One chunk will cover the whole matrix.
+      atomDimsChunk(1) = atomDims(1)
+      atomDimsChunk(2) = atomDims(2)
+   endif
 
    ! Create the Integral group within the setup HDF5 file.
    call h5gcreate_f (setup_fid,"/atomIntgGroup",atomIntgGroup_gid,hdferr)
@@ -152,17 +190,11 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    if (hdferr /= 0) stop 'Failed to create vale vale plid'
    call h5pset_layout_f  (valeVale_plid,H5D_CHUNKED_F,hdferr)
    if (hdferr /= 0) stop 'Failed to set vale vale plid layout'
-   call h5pset_chunk_f   (valeVale_plid,2,chunkDims,hdferr)
+   call h5pset_chunk_f   (valeVale_plid,2,atomDimsChunk,hdferr)
    if (hdferr /= 0) stop 'Failed to set vale vale plid chunk size'
 !   call h5pset_shuffle_f (valeVale_plid,hdferr)
    call h5pset_deflate_f (valeVale_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set vale vale for deflation'
-
-   ! Create and assign properties for MPI
-!   call h5pcreate_f (H5P_DATASET_XFER_F, valeVale_xferpid, hdferr)
-!   if (hdferr /= 0) stop 'Failed to create valeVale xferpid'
-!   call h5pset_dxpl_mpio_f (valeVale_xferpid,H5FD_MPIO_INDEPENDENT_F,hdferr)
-!   if (hdferr /= 0) stop 'Failed to set MPI valeVale property'
 
    ! Create the datasets that will be used for the subgroups of atomIntgGroup.
    do i = 1, numKPoints
@@ -180,13 +212,10 @@ subroutine initSetupIntegralHDF5 (setup_fid)
          write (currentName,fmt="(i7.7)") j
          call h5dcreate_f(atomPotKPointOL_gid(i),currentName,H5T_NATIVE_DOUBLE,&
                & valeVale_dsid,atomPotOverlap_did(i,j),hdferr,valeVale_plid)
-         !print *, "atomPotOverlap_did: ", atomPotOverlap_did(i,j)
-         !flush(6)
          if (hdferr /= 0) stop 'Failed to create potential overlap did'
       enddo
    enddo
-   !print *, "valeVale_dsid",valeVale_dsid
-   !print *, "xfer pid", valeVale_xferpid
+
 end subroutine initSetupIntegralHDF5
 
 
@@ -196,9 +225,9 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
    use HDF5
 
    ! Import necessary object modules.
-   use O_KPoints     ! For numKPoints
-   use O_Potential   ! For potDim
-   use O_AtomicSites ! For valeDim
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: potDim
+   use O_AtomicSites, only: valeDim
 
    ! Define the passed parameters.
    integer(hid_t) :: setup_fid
@@ -209,22 +238,8 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
    character*30 :: currentName
 
    ! Initialize data structure dimensions.
-!#ifndef GAMMA
-!   atomDims(1) = 2 ! Real and imaginary are needed.
-!#else
-!   atomDims(1) = 1 ! Real needed only
-!#endif
-!   atomDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
-#ifndef GAMMA
-   !atomDims(1) = 2 ! Real and imaginary are needed.
    atomDims(1) = valeDim
    atomDims(2) = valeDim
-#else
-   atomDims(1) = 1 ! Real needed only
-   atomDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
-#endif
-!   chunkDims(1) = atomDims(1)/mpiSize
-!   chunkDims(2) = atomDims(2)/mpiSize
 
    ! Open the Integral group within the setup HDF5 file.
    call h5gopen_f (setup_fid,"/atomIntgGroup",atomIntgGroup_gid,hdferr)
@@ -307,12 +322,9 @@ subroutine closeSetupIntegralHDF5
    ! Import any necessary definition modules.
    use HDF5
 
-   ! Import MPI module
-   use MPI
-
    ! Import necessary object modules.
-   use O_KPoints     ! For numKPoints
-   use O_Potential   ! For potDim
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: potDim
 
    ! Make sure that no variables are implicitly declared.
    implicit none
@@ -324,10 +336,6 @@ subroutine closeSetupIntegralHDF5
    ! Close the property list first.
    call h5pclose_f (valeVale_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to close valeVale_plid.'
-
-   ! Close MPI property list
-   call h5pclose_f (valeVale_xferpid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeVale_xferpid.'
 
    ! Close the datasets next.
    do i = 1, numKPoints

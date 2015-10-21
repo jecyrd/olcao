@@ -8,23 +8,27 @@ subroutine setupSCF
    use O_Kinds
 
    ! Import the necessary modules.
-   use O_SetupHDF5
-   use O_CommandLine
-   use O_Input
-   use O_Lattice
-   use O_KPoints
-   use O_ElectroStatics
-   use O_ExchangeCorrelation
-   use O_GaussianRelations
-   use O_IntegralsSCF
-   use O_Basis
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Potential
-   use O_CoreCharge
-   use O_TimeStamps
+   use O_SetupHDF5,   only: initSetupHDF5, closeSetupHDF5
+   use O_CommandLine, only: parseSetupCommandLine
+   use O_Input,       only: parseInput
+   use O_Lattice,     only: initializeLattice, initializeFindVec, cleanUpLattice
+   use O_KPoints,     only: numKPoints, computePhaseFactors, cleanUpKPoints
+   use O_Basis,       only: renormalizeBasis, cleanUpBasis
+   use O_ExchangeCorrelation, only: maxNumRayPoints, getECMeshParameters, &
+                                  & makeECMeshAndOverlap, cleanUpExchCorr
+   use O_ElectroStatics,      only: makeElectrostatics
+   use O_GaussianRelations,   only: makeAlphaDist, makeAlphaNucDist, &
+                                  & makeAlphaPotDist, cleanUpGaussRelations
+   use O_IntegralsSCF,        only: allocateIntegralsSCF, gaussOverlapOL, &
+                                  & gaussOverlapKE, gaussOverlapNP, &
+                                  & elecPotGaussOverlap
+   use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
+   use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
+   use O_PotSites,    only: cleanUpPotSites
+   use O_PotTypes,    only: cleanUpPotTypes
+   use O_Potential,   only: cleanUpPotential
+   use O_CoreCharge,  only: makeCoreRho
+   use O_TimeStamps,  only: initOperationLabels
 
    ! Import the HDF5 module.
    use HDF5
@@ -45,8 +49,8 @@ subroutine setupSCF
    integer :: mpiSize
    
    ! Define cvOL global array file handle
-   integer,allocatable,dimension(:) :: ga_coreValeOL
-   
+   integer, allocatable, dimension(:) :: ga_coreValeOL
+
    ! Define tau parameters
 !   integer profiler(2) / 0, 0 /
 !   save profiler
@@ -73,21 +77,16 @@ subroutine setupSCF
 
    ! Initialize the Global Arrays Interface
    call ga_initialize()
-!   call nga_initialize()
 
    ! Initialize tau timer and start it.
+
 !   call TAU_PROFILE_INIT()
 !   call TAU_PROFILE_TIMER(profiler, 'setup')
 !   call TAU_PROFILE_START(profiler)
 !   call TAU_PROFILE_SET_NODE(0)
 
    ! Initialize the Memory Allocator Interface
-#ifndef GAMMA
-!   print *, "ma_init"
-!   gastat = MA_init(MT_DCPL, stack/mpiSize, heap/mpiSize)
    gastat = MA_init(MT_F_DCPL, stack, heap)
-!   print *, "post ma_init"
-#endif
 
    ! Initialize the logging labels.
    call initOperationLabels
@@ -132,73 +131,70 @@ subroutine setupSCF
 
    ! Now, the dimensions of the system are known.  Therefor we can
    !   initialize the HDF5 file structure format, and datasets.
-   if (mpiRank==0) then
-     call initSetupHDF5 (maxNumRayPoints)
+   if (mpiRank == 0) then
+      call initSetupHDF5 (maxNumRayPoints)
    endif
    call ga_sync()
 
+
+   ! Construct the exchange correlation overlap matrix, and sampling field.
    call makeECMeshAndOverlap()
    call ga_sync()
-   
+
+   ! Construct matrix operators and integral vectors that are used to later
+   !   determine the electrostatic potential.
    call makeElectrostatics()
    call ga_sync()
 
    ! Create the alpha distance matrices.
    call makeAlphaDist
 
+
    ! Allocate space to be used for each of the integrals.  The 1 for the
    !   valeVale cases is a place holder for these matrices because they will
-   !   later (main.exe) consider spin.a
-#ifndef GAMMA
+   !   later (main.exe) consider spin.
    ! Setup the cvOL global array
    allocate(ga_coreValeOL(numKPoints))
    call gaSetupOL(ga_coreValeOL,coreDim,valeDim,numKPoints)
-#else
-   call allocateIntegralsSCF(coreDim,valeDim,numKPoints)
-#endif
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapOL(ga_coreValeOL,potDim)
+   call gaussOverlapOL(ga_coreValeOL)
    call ga_sync()
 
    ! Calculate the matrix elements of the kinetic energy between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapKE(ga_coreValeOL,potDim)
+   call gaussOverlapKE(ga_coreValeOL)
    call ga_sync()
 
 
    ! Create the alpha distance matrix with nuclear alpha factor
-   call makeAlphaNucDist
+   call makeAlphaNucDist()
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the nuclear potentials.
-   call gaussOverlapNP(ga_coreValeOL,potDim)
+   call gaussOverlapNP(ga_coreValeOL)
    call ga_sync()
 
    ! Create the alpha distance matrix with potential alpha factor
-   call makeAlphaPotDist
-   
+   call makeAlphaPotDist()
+
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the potential site potential alphas.
-   call elecPotGaussOverlap(ga_coreValeOL,potDim)
+   call elecPotGaussOverlap(ga_coreValeOL)
    call ga_sync()
-   
+
    ! Now that all the matrices are done being made we can deallocate the
    !   data structures that were used in all the above subroutines but are not
    !   necessary now.
-#ifndef GAMMA
-#else
-   call cleanUpIntegralsSCF
-#endif
    call cleanUpBasis
    call cleanUpGaussRelations
 
 
    ! Construct a vector describing the core charge density since it will not
    !   change throughout the SCF iterations because of core orthogonalization.
-   if (coreDim /= 0 .and. mpiRank==0) then
-      call makeCoreRho
+   if ((coreDim /= 0) .and. (mpiRank == 0)) then
+      call makeCoreRho()
    endif
    call ga_sync()
 
@@ -207,16 +203,17 @@ subroutine setupSCF
    !   the radial functions since they are no longer needed.
    call cleanUpRadialFns
 
-!!!!!!!!!!! old position of electrostat   call makeElectrostatics()
+
    ! Close all the parts of the setup HDF5 file.
-   if (mpiRank==0) then
-     call closeSetupHDF5
+   if (mpiRank == 0) then
+      call closeSetupHDF5
    endif
 
-   call ga_sync()
    ! Deallocate the coreValeOL global array
+   call ga_sync()
    call gaDestroyOL(ga_coreValeOL)
    deallocate(ga_coreValeOL)
+
    ! Deallocate all the other as of yet un-deallocated arrays.
    call cleanUpAtomTypes
    call cleanUpAtomSites
@@ -230,24 +227,18 @@ subroutine setupSCF
    ! End the tau timer
 !   call TAU_PROFILE_STOP(profiler)
 
+   ! End the MPI interface
+!   call MPI_FINALIZE (mpierr)
+
    ! Close the output file
    close (20)
 
+   ! Open a file to signal completion of the program.
    if (mpiRank == 0) then
-     ! Open a file to signal completion of the program.
-     open (unit=2,file='fort.2',status='unknown')
-     close (2) 
+      open (unit=2,file='fort.2',status='unknown')
+      close (2)
    endif
 
-   call ga_sync()
-!  The hdf5 interface is now closed in "closeSetupHDF5" subroutine because
-!  mpiRank 0 is the only one that calls it
-   ! Close the HDF5 interface.
-   if (mpiRank == 0) then
-     call h5close_f (hdferr)
-     if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
-   endif
-   
    ! Close the GA interface
    call ga_sync()
    call ga_terminate()
@@ -261,8 +252,8 @@ subroutine getImplicitInfo
 
    ! Import necessary modules.
    use O_ExchangeCorrelation
-   use O_AtomicSites
    use O_AtomicTypes
+   use O_AtomicSites
    use O_PotSites
    use O_PotTypes
    use O_Lattice

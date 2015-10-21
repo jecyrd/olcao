@@ -1,8 +1,8 @@
-module O_Intg
+module O_PSCF
 
 contains
 
-subroutine intgPSCF
+subroutine pscf
 
    ! Import the necessary modules.
    use O_Kinds
@@ -10,9 +10,9 @@ subroutine intgPSCF
    use O_Input,         only: parseInput
    use O_Potential,     only: initPotCoeffs
    use O_Basis,         only: renormalizeBasis
-   use O_CommandLine,   only: doMOME, parseIntgCommandLine
+   use O_CommandLine,   only: doMOME, parsePSCFCommandLine
    use O_IntegralsPSCF, only: intgAndOrMom
-   use O_PSCFIntgHDF5,  only: initPSCFIntgHDF5, closePSCFIntgHDF5, setMOMEStatus
+   use O_PSCFHDF5,      only: initPSCFHDF5, closePSCFHDF5, setMOMEStatus
    use O_Lattice,       only: initializeLattice, initializeFindVec
    use MPI
 
@@ -24,9 +24,6 @@ subroutine intgPSCF
    integer :: mpiSize
    integer :: mpiErr
 
-   ! Open the potential file that will be read from in this program.
-   open (unit=8,file='fort.8',status='old',form='formatted')
-
    ! Initialize the MPI interface
    call MPI_INIT (mpierr)
    call MPI_COMM_RANK (MPI_COMM_WORLD,mpiRank,mpierr)
@@ -37,7 +34,7 @@ subroutine intgPSCF
 
 
    ! Parse the command line parameters
-   call parseIntgCommandLine
+   call parsePSCFCommandLine
 
 
    ! Read in the input to initialize all the key data structure variables.
@@ -65,22 +62,16 @@ subroutine intgPSCF
    ! Renormalize the basis functions
    call renormalizeBasis
 
-!write (20,*) "Got here 0"
-!call flush (20)
 
    ! Prepare the HDF5 files for the post SCF integrals.
    if (mpiRank == 0) then
-      call initPSCFIntgHDF5
+      call initPSCFHDF5
    endif
 
-!write (20,*) "Got here 1"
-!call flush (20)
 
    ! Read the provided potential coefficients.
    call initPotCoeffs
 
-!write (20,*) "Got here 2"
-!call flush (20)
    ! Compute the integrals and the momentum matrix elements (MME or MOME) (if
    !   requested).  The MME request is given on the command line and the
    !   subroutine gets that flag from that module.  The integrals are also
@@ -100,9 +91,14 @@ subroutine intgPSCF
    endif
 
 
+   ! Solve the wave equation.
+   do i = 1, spin
+      call secularEqnMemory(i)
+   enddo
+
    ! Close the HDF5 PSCF integrals file.
    if (mpiRank == 0) then
-      call closePSCFIntgHDF5
+      call closePSCFHDF5
    endif
 
 
@@ -115,7 +111,7 @@ subroutine intgPSCF
    ! End the MPI interface
    call MPI_FINALIZE (mpierr)
 
-end subroutine intgPSCF
+end subroutine pscf
 
 
 subroutine getImplicitInfo
@@ -147,4 +143,4 @@ subroutine getImplicitInfo
 
 end subroutine getImplicitInfo
 
-end module O_Intg
+end module O_PSCF

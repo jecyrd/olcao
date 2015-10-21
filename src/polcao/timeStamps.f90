@@ -60,6 +60,8 @@ subroutine initOperationLabels
    opLabels(23) = '*************  Transition Calculation  ************'
    opLabels(24) = '*************  Parse The Command Line  ************'
    opLabels(25) = '************  Evaluate WaveFn on Mesh  ************'
+   opLabels(26) = '************  Three Center Bond Order  ************'
+   opLabels(27) = '***********  Initialize PSCF HDF5 File  ***********'
 
 end subroutine initOperationLabels
 

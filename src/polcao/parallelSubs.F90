@@ -1,32 +1,10 @@
-!! This entire module is a collection of subroutines which were written to
-!! enable the parallelization of the OLCAO method (mostly OLCAOsetup).
-!! It was written during a naive era for the author who was trying to 
-!! blitzkreig the parallelization of a summer. In that light, code reuse and
-!! best practices are lacking. However, everything was written with the
-!! mind set of having a simple equation in which to load balance various
-!! places of the code. It resulted in a couple different implenetations of 
-!! the same thing, which could be cleaned up to one or two more simplistic
-!! things. But we all know that research code is by and large produced on
-!! a results basis, and this is where it eventaully ended up
-!!
-!! Author: James E. Currie
-!! Email: jecyrd@mail.umkc.edu
-module O_ParallelSubs
+! Documentation here
+!
+module O_Parallel
   use MPI
   implicit none
-!  Public
-!  integer :: mpiRank
-!  integer :: mpiSize
-!  integer :: mpiErr
 
   contains
-
-!  subroutine getMPIvars(mpiRank,mpiSize)
-!    implicit none
-!    integer, intent(inout) :: mpiRank,mpiSize
-!    call MPI_COMM_RANK(MPI_COMM_WORLD,mpiRank,mpiErr)
-!    call MPI_COMM_SIZE(MPI_COMM_WORLD,mpiSize,mpiErr)
-!  end subroutine getMPIvars
 
   ! This subroutine is used to balance an loop for use with MPI.  The input
   ! (toBalance) is the number of things that needs to be split up. The
@@ -352,10 +330,4 @@ subroutine writeValeVale(ga_valeVale,opCode,numKPoints,potDim, &
 
 end subroutine writeValeVale
 
-! This subroutine is for OLCAOMain to correctly read in the valeVale
-! Matrix. Obviously it's not done yet.
-subroutine readValeValeFromDisk()
-
-end subroutine readValeValeFromDisk
-
-end module O_ParallelSubs
+end module O_Parallel

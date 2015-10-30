@@ -46,6 +46,7 @@ subroutine setupSCF
    
    ! Define cvOL global array file handle
    integer, allocatable, dimension(:) :: localCVoL
+   integer, allocatable, dimension(:) :: localVCoL
 
    ! Define tau parameters
 !   integer profiler(2) / 0, 0 /
@@ -128,22 +129,22 @@ subroutine setupSCF
    ! Create the alpha distance matrices.
    call makeAlphaDist
 
+   ! Calculate the block sizes for the local VV, CC, and CV/VC matrices
+   ! to be used in each integral subroutine
+   call calcSetupBlockSizes(valeDim, coreDim, thingy...)
 
-   ! Allocate space to be used for each of the integrals.  The 1 for the
-   !   valeVale cases is a place holder for these matrices because they will
-   !   later (main.exe) consider spin.
-   ! Setup the CVoL local arrays
-   allocate(localCVoL)
-   call setupCVoL(localCVoL,coreDim,valeDim,numKPoints)
+   ! Allocate the local CVoL and VCoL matrices since they need to be carried
+   ! through each integral subroutine.
+   call setupOL(localCVoL, localVCoL, thingy....)
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapOL(localCVoL)
+   call gaussOverlapOL(localCVoL, localVCoL)
    call MPI_Barrier(mpierr)
 
    ! Calculate the matrix elements of the kinetic energy between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapKE(localCVoL)
+   call gaussOverlapKE(localCVoL, localVCoL)
    call MPI_Barrier(mpierr)
 
 
@@ -152,7 +153,7 @@ subroutine setupSCF
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the nuclear potentials.
-   call gaussOverlapNP(localCVoL)
+   call gaussOverlapNP(localCVoL, localVCoL)
    call MPI_Barrier(mpierr)
 
    ! Create the alpha distance matrix with potential alpha factor
@@ -160,7 +161,7 @@ subroutine setupSCF
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the potential site potential alphas.
-   call elecPotGaussOverlap(localCVoL)
+   call elecPotGaussOverlap(localCVoL, localVCoL)
    call MPI_Barrier(mpierr)
 
    ! Now that all the matrices are done being made we can deallocate the
@@ -187,10 +188,10 @@ subroutine setupSCF
    if (mpiRank == 0) then
       call closeSetupHDF5
    endif
-
-   ! Deallocate the coreValeOL global array
    call MPI_Barrier(mpierr)
-   deallocate(localCVoL)
+
+   ! Deallocate the CVoL and VCoL matrices
+   call cleanUpOL(localCVoL, localVCoL)
 
    ! Deallocate all the other as of yet un-deallocated arrays.
    call cleanUpAtomTypes

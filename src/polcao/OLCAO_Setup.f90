@@ -40,16 +40,12 @@ subroutine setupSCF
    ! Make sure that there are no accidental variable declarations.
    implicit none
 
-!Include necessary global arrays libraries
-#include "mafdecls.fh"
-#include "global.fh"
-
    ! Define global mpi parameters
    integer :: mpiRank
    integer :: mpiSize
    
    ! Define cvOL global array file handle
-   integer, allocatable, dimension(:) :: ga_coreValeOL
+   integer, allocatable, dimension(:) :: localCVoL
 
    ! Define tau parameters
 !   integer profiler(2) / 0, 0 /
@@ -60,23 +56,11 @@ subroutine setupSCF
 !   integer :: tauerr
    integer :: mpierr
 
-   ! Define Global Arrays and MA variables
-   logical :: gastat
-   integer :: stack, heap
-
-   ! Set the GA stack and heap size
-!   stack = 4294967295
-!   heap = 4294967295
-   stack = 30000000
-   heap =  30000000
 
    ! Initialize the MPI interface
    call MPI_INIT (mpierr)
    call MPI_COMM_RANK (MPI_COMM_WORLD,mpiRank,mpierr)
    call MPI_COMM_SIZE (MPI_COMM_WORLD,mpiSize,mpierr)
-
-   ! Initialize the Global Arrays Interface
-   call ga_initialize()
 
    ! Initialize tau timer and start it.
 
@@ -84,9 +68,6 @@ subroutine setupSCF
 !   call TAU_PROFILE_TIMER(profiler, 'setup')
 !   call TAU_PROFILE_START(profiler)
 !   call TAU_PROFILE_SET_NODE(0)
-
-   ! Initialize the Memory Allocator Interface
-   gastat = MA_init(MT_F_DCPL, stack, heap)
 
    ! Initialize the logging labels.
    call initOperationLabels
@@ -134,17 +115,15 @@ subroutine setupSCF
    if (mpiRank == 0) then
       call initSetupHDF5 (maxNumRayPoints)
    endif
-   call ga_sync()
-
 
    ! Construct the exchange correlation overlap matrix, and sampling field.
    call makeECMeshAndOverlap()
-   call ga_sync()
+   call MPI_Barrier(mpierr)
 
    ! Construct matrix operators and integral vectors that are used to later
    !   determine the electrostatic potential.
    call makeElectrostatics()
-   call ga_sync()
+   call MPI_Barrier(mpierr)
 
    ! Create the alpha distance matrices.
    call makeAlphaDist
@@ -153,19 +132,19 @@ subroutine setupSCF
    ! Allocate space to be used for each of the integrals.  The 1 for the
    !   valeVale cases is a place holder for these matrices because they will
    !   later (main.exe) consider spin.
-   ! Setup the cvOL global array
-   allocate(ga_coreValeOL(numKPoints))
-   call gaSetupOL(ga_coreValeOL,coreDim,valeDim,numKPoints)
+   ! Setup the CVoL local arrays
+   allocate(localCVoL)
+   call setupCVoL(localCVoL,coreDim,valeDim,numKPoints)
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapOL(ga_coreValeOL)
-   call ga_sync()
+   call gaussOverlapOL(localCVoL)
+   call MPI_Barrier(mpierr)
 
    ! Calculate the matrix elements of the kinetic energy between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapKE(ga_coreValeOL)
-   call ga_sync()
+   call gaussOverlapKE(localCVoL)
+   call MPI_Barrier(mpierr)
 
 
    ! Create the alpha distance matrix with nuclear alpha factor
@@ -173,16 +152,16 @@ subroutine setupSCF
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the nuclear potentials.
-   call gaussOverlapNP(ga_coreValeOL)
-   call ga_sync()
+   call gaussOverlapNP(localCVoL)
+   call MPI_Barrier(mpierr)
 
    ! Create the alpha distance matrix with potential alpha factor
    call makeAlphaPotDist()
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the potential site potential alphas.
-   call elecPotGaussOverlap(ga_coreValeOL)
-   call ga_sync()
+   call elecPotGaussOverlap(localCVoL)
+   call MPI_Barrier(mpierr)
 
    ! Now that all the matrices are done being made we can deallocate the
    !   data structures that were used in all the above subroutines but are not
@@ -196,7 +175,7 @@ subroutine setupSCF
    if ((coreDim /= 0) .and. (mpiRank == 0)) then
       call makeCoreRho()
    endif
-   call ga_sync()
+   call MPI_Barrier(mpierr)
 
 
    ! Deallocate the data component of the atomType data structure that holds
@@ -210,9 +189,8 @@ subroutine setupSCF
    endif
 
    ! Deallocate the coreValeOL global array
-   call ga_sync()
-   call gaDestroyOL(ga_coreValeOL)
-   deallocate(ga_coreValeOL)
+   call MPI_Barrier(mpierr)
+   deallocate(localCVoL)
 
    ! Deallocate all the other as of yet un-deallocated arrays.
    call cleanUpAtomTypes
@@ -240,8 +218,7 @@ subroutine setupSCF
    endif
 
    ! Close the GA interface
-   call ga_sync()
-   call ga_terminate()
+   call MPI_Barrier(mpierr)
 
    ! End the MPI interface
    call MPI_FINALIZE (mpierr)

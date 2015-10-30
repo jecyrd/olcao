@@ -125,11 +125,6 @@ subroutine gaussOverlapOL(descriptCV,descriptVC,localCV,localVC)
    integer :: l1l2Switch
    integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
 
-   ! Declare GA toolkit file handles
-   integer,allocatable,dimension(:) :: ga_coreCore
-   integer,allocatable,dimension(:) :: ga_coreVale
-   integer,allocatable,dimension(:) :: ga_valeVale
-   integer :: ga_valeCore
 
    ! Record the beginning of this phase of the setup calculation.
    call timeStampStart (8)
@@ -147,14 +142,6 @@ subroutine gaussOverlapOL(descriptCV,descriptVC,localCV,localVC)
    allocate (currentPairGamma    (maxNumStates,maxNumStates))
 #endif
 
-   ! Allocate space to hold the GA file handles.
-   allocate(ga_coreCore(numKPoints))
-   allocate(ga_coreVale(numKPoints))
-   allocate(ga_valeVale(numKPoints))
-
-   ! Setup up the global arrays
-   call gaSetup(ga_coreCore,ga_valeCore,ga_coreVale,ga_valeVale,coreDim, &
-         & valeDim, numKPoints)
 
 !   ! Initialize key matrices
 !#ifndef GAMMA

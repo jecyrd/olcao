@@ -1814,9 +1814,6 @@ subroutine elecPotGaussOverlap(descriptCV_OL,descriptVC_OL,localCV_OL,&
    integer :: i,j ! Loop index variables
    integer :: currentIterCount
 
-   ! Declare passed variables
-   integer,intent(inout),dimension(:) :: ga_coreValeOL
-
    ! Make a time stamp.
    call timeStampStart (11)
 
@@ -1848,7 +1845,7 @@ subroutine elecPotGaussOverlap(descriptCV_OL,descriptVC_OL,localCV_OL,&
 
          ! Calculate the overlap for the current alpha of the current type
          !   with all the alphas of every pair of atoms.
-         call ga_sync()
+         call MPI_Barrier(mpierr)
          call gaussOverlapEP(descriptCV_OL,descriptVC_OL,localCV_OL,&
                & localVC_OL,potDim,currAlphaNumber,currPotElement,&
                & currPotNumber,currMultiplicity,currPotAlpha,currPotTypeNumber)

@@ -5,9 +5,6 @@ module O_IntegralsSCF
    use O_Constants
    use HDF5
 
-   ! Import subroutines making Parallelism possible
-   use O_ParallelSubs
-
    ! Make sure that no funny variables are defined.
    implicit none
 
@@ -25,7 +22,7 @@ module O_IntegralsSCF
    contains
 
 ! Standard two center overlap integral.
-subroutine gaussOverlapOL(descriptCV,descriptVC,localCV,localVC)
+subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
 
    ! Import necessary modules.
    use O_Kinds
@@ -40,21 +37,18 @@ subroutine gaussOverlapOL(descriptCV,descriptVC,localCV,localVC)
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
    use O_TimeStamps
+
+   ! Import necessary parallel modules
    use MPI
+   use O_Parallel
+   use O_ParallelSetup
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define the passed parameters.
-   integer, dimension (9), intent(in) :: descriptCV
-   integer, dimension (9), intent(in) :: descriptVC
-#ifndef GAMMA
-   complex (kind=double), dimension(:,:), intent (inout) :: localCV
-   complex (kind=double), dimension(:,:), intent (inout) :: localVC
-#else
-   real (kind=double), dimension(:,:), intent (inout) :: localCV
-   real (kind=double), dimension(:,:), intent (inout) :: localVC
-#endif
+   type(BlacsInfo), intent(in)    :: BlcsInfo
+   type(ArrayInfo), intent(inout) :: cvOLArrayInfo
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
@@ -115,11 +109,11 @@ subroutine gaussOverlapOL(descriptCV,descriptVC,localCV,localVC)
    real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
          ! lattice points will be considered for integration.
 
-   ! Define variables for MPI
-   integer :: maxAtom, minAtom
-   integer :: toBalance
-   integer :: atomLoop
-   integer :: mpiSize,mpiRank,mpiErr
+   ! Define variables for MPI, and distributed operations
+   type(BlacsInfo) :: BlcsInfo
+   type(ArrayInfo) :: vvArrayInfo
+   type(ArrayInfo) :: ccArrayInfo
+   type(ArrayInfo) :: cvArrayInfo
 
    ! Define variables for gauss integrals
    integer :: l1l2Switch
@@ -141,32 +135,17 @@ subroutine gaussOverlapOL(descriptCV,descriptVC,localCV,localVC)
 #else
    allocate (currentPairGamma    (maxNumStates,maxNumStates))
 #endif
-
-
-!   ! Initialize key matrices
-!#ifndef GAMMA
-!   coreValeOL    (:,:,:)      = 0.0_double
-!   valeVale      (:,:,:,:)    = 0.0_double
-!   coreCore      (:,:,:)      = 0.0_double
-!#else
-!   coreValeOLGamma    (:,:)   = 0.0_double
-!   valeValeGamma      (:,:,:) = 0.0_double
-!   coreCoreGamma      (:,:)   = 0.0_double
-!#endif
-
-   ! Compute the parameters for load balancing the following loop. Each
-   !   process needs to have about the same number of atom pairs, but
-   !   each atom pair (a,b) only needs to be done once. (I.e. no (b,a)).
-   !   Note that the numbers stored in minAtom and maxAtom are from within
-   !   the range 1 to numAtomSites*(numAtomSites+1)/2, *not* 1 to
-   !   numAtomSites.
-   toBalance = (numAtomSites * (numAtomSites + 1))/2
-   call MPI_Comm_Size(MPI_COMM_WORLD,mpiSize,mpiErr)
-   call MPI_Comm_Rank(MPI_COMM_WORLD,mpiRank,mpiErr)
-   call loadBalMPI(toBalance,minAtom,maxAtom,mpiRank,mpiSize)
+   
+   call setuparrayDesc(vvArrayInfo, BlcsInfo, valeDim, valeDim)
+   call setuparrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim)
+ 
+   call get me dem pairs brah
+   call getValeAtom(localIndx, iMinMax, jMinMax)
 
    ! Begin atom-atom overlap loops.
    do atomLoop = minAtom, maxAtom
+   !do i = iMinMax(1), iMinMax(2)
+   !  do j = jMinMax(1), jMinMax(2)
 
       ! Get the actual atom numbers of the atoms in this atomLoop pair.
       call findUnpackedIndices(atomLoop,i,j)

@@ -45,8 +45,7 @@ subroutine setupSCF
    integer :: mpiSize
    
    ! Define cvOL global array file handle
-   integer, allocatable, dimension(:) :: localCVoL
-   integer, allocatable, dimension(:) :: localVCoL
+   type(ArrayInfo) :: cvArrayInfo
 
    ! Define tau parameters
 !   integer profiler(2) / 0, 0 /
@@ -129,17 +128,15 @@ subroutine setupSCF
    ! Create the alpha distance matrices.
    call makeAlphaDist
 
-   ! Calculate the block sizes for the local VV, CC, and CV/VC matrices
-   ! to be used in each integral subroutine
-   call calcSetupBlockSizes(valeDim, coreDim, thingy...)
+   ! Setup the BLACS interface
+   call setupBlacs(BlcsInfo)
 
-   ! Allocate the local CVoL and VCoL matrices since they need to be carried
-   ! through each integral subroutine.
-   call setupOL(localCVoL, localVCoL, thingy....)
+   ! Setup the Array Desc needed to persist through overlap routines
+   call setupArrayDesc(cvOLArrayInfo, BlcsInfo, coreDim, valeDim) 
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapOL(localCVoL, localVCoL)
+   call gaussOverlapOL(cvOLArrayInfo, BlcsInfo)
    call MPI_Barrier(mpierr)
 
    ! Calculate the matrix elements of the kinetic energy between all LCAO Bloch

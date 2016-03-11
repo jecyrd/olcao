@@ -3,7 +3,7 @@
 !! Author: James E. Currie
 !! Email: jecyrd@mail.umkc.edu
 !!
-module O_SlSubs
+module O_ParallelMain
 
   ! Although each subroutine should specify implicit none, it is placed
   ! in this module to protect against accidentaly omission
@@ -21,29 +21,10 @@ subroutine solve_PZHEGVX(valeDim, numKPoints, potDim, spinDirection, &
   integer, dimension(3) :: myInfo
   integer, intent(in) :: valeDim, numKPoints, potDim, spinDirection
 
-  ! We're going to need to fire set my info in order to do any of this
-  ! it has lots of relevant information that lots need.
-
-  ! Calculate all information needed to have the proper distribution
-  ! for the coming lapack call
-  call getBlockFact(myInfo, numprocs, gridDim, valeDim, blkFact)
-  call getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
-  
-  call numRowColBlocks(nbrow, nbcol, blkFact)
-
-  ! Allocate proper space for global array
-  call allocLocalArray(local, valeDim, blkFact, myInfo, gridDim)
-
   ! Read the hamiltonian and overlap matrices from disk into the proper
   ! local distributions
   call readDistributedWaveFunction()
   
-  ! Initlaize scalapack context
-  call initSl(slctxt, grimDim, myInfo)
-
-  ! Initialize array descriptors for scalapack
-  call getArrDesc(slctxt, blkFact, localLD, desca, desb, descz)
-
   ! Solve the eigenvalue problem now that we're properly distributed.
   call sl_PZHEGVX(localA, localB, localZ, desca, descb, descz, &
        & myInfo, numprocs, gridDim, trailDim, valeDim, blkFact, eigenVals)
@@ -62,168 +43,6 @@ subroutine solve_PZHEGVX(valeDim, numKPoints, potDim, spinDirection, &
 
 end subroutine solve_PZHEGVX
 
-! This subroutine determines the process grid to be used for the
-! call to scalapack. There are a lot of considerations that need to be
-! taken into account in order to have an optimal process grid.
-!
-! From netlib documentation the recomendation for routines that use 
-! Cholesky, is to have near square blocks and process grids. However, the
-! ability to do that depends on the number of processes specified by the
-! user. Because there's little we can do about that, we'll try to get the
-! "most square" processor grid given the number of processses. But in
-! the documentation we'll recommend that the user use perfect square number
-! of processes.
-!
-! Because we're working with Hermitian matrices to solve our eigen problem
-! we can typically get very square blocking factors. This should be little
-! issue to map onto any processor grid.
-subroutine getBlockFact(myInfo, numprocs, gridDim, valeDim, blkFact)
-  implicit none
-
-  ! Define passed parameters
-  integer, dimension(3), intent(in) :: myInfo
-  integer, intent(in) :: numprocs
-  integer, dimension(2), intent(out) :: gridDim
-  integer, intent(in) :: valeDim
-  integer, dimension(2), intent(out) :: blkFact ! blocking factors
-
-  ! Local variables
-  integer :: modifiedValeDim
-
-  if (mod(valeDim,2) /= 0) then
-    modifiedValeDim = valeDim - 1
-  else
-    modifiedValeDim = valeDim
-  endif
-
-  call calcProcGrid(numProcs, gridDim(1), gridDim(2))
-
-  ! Calculate the blocking factors to be used. From the calcProcGrid
-  ! routine we know that gridDim1 (prows) will be <= gridDim2 (pcols).
-  ! Because of this we'll do the integer divide on gridDim(2), ensuring
-  ! that our blocks are square.
-  blkFact(1) =  int(modifiedValeDim / gridDim(2))
-  blkFact(2) =  int(modifiedValeDim / gridDim(2))
-end subroutine getblkFact
-
-! In order to do the getBlockFact subroutine we need to do integer factorization
-! of the number of processes, in order to find the "most square" 
-! distribution of processors into the grid. To do this we take the, integer
-! square root of numprocs, then divide numprocs by prows. From testing 
-! integer values of processes in the range of 2 to 1,000,000 the biggest
-! difference in abs(prows-pcols) is 2. Meaning at most only 2 processes
-! will be left out by the user's choice of processes.
-subroutine calcProcGrid(numprocs, prows, pcols)
-  implicit none
-
-  ! Define passed parameters
-  integer, intent(in) :: numprocs
-  integer, intent(out) :: prows, pcols
-
-  prows = int(sqrt(dble(numprocs)))
-  pcols = numprocs/prows
-end subroutine calcProcGrid
-
-! Subroutine that calculates the trailing dimensions for a process
-subroutine getTrailDim(myInfo, valeDim, gridDim, blkFact, trailDim)
-  implicit none
-
-  ! Define passed data
-  integer, dimension(3), intent(in) :: myInfo
-  integer, intent(in) :: valeDim
-  integer, dimension(2), intent(in) :: gridDim
-  integer, dimension(2), intent(in) :: blkFact ! blocking factors
-  integer, dimension(2), intent(out) :: trailDim ! Trailing Dimension
-
-  ! Define local variables
-  integer :: rTrailProc, cTrailProc
-
-  ! Initialize trailDIm
-  trailDim(:) = 0
-
-  ! Because we decided that our blocks are going to be square. It makes it
-  ! a touch more difficult to determine if a particular process has
-  ! any trailing dimensions. From the process grid dimensions, we need to
-  ! know whether or not the process calculating this is going to end up
-  ! with trailing dimnesions according to the block-cyclic decomposition.
-  !
-  ! Luckily we can divide and modulo our asses off in order to get this
-  ! info. In order to do this we need to know how many times the a process 
-  ! row or process column is going to fit into the dimensions of the global
-  ! matrix, given by valdim/(# process rows/cols). We then module that 
-  ! number by the (# process rows/cols) with respect to the dimension.
-  ! That should give us the process that the trailing dimension belongs
-  ! to. We then have each process check whether that process is themself
-  ! and if it is, they obtain the trailing dimension.
-  ! that number by nprow again
-
-  rTrailProc = mod( valeDim/blkFact(1) , gridDim(1))
-  cTrailProc = mod( valeDim/blkFact(2) , gridDim(2))
-
-  if ( rTrailProc == myInfo(1) ) then
-    trailDim(1) = mod(valeDim, blkFact(1))
-  endif
-  if ( cTrailProc == myInfo(2) ) then
-    trailDim(2) = mod(valeDim, blkFact(2))
-  endif
-
-end subroutine getTrailDim
-
-! This subroutine calculates the number of blocks along each row and 
-! column of the local array. It can then be used to loop over the
-! globalToLocalMap subroutine to get the appropriate lo,hi parameters
-! for taking information from a global array
-subroutine numRowColBlocks(nbrow, nbcol, blkFact)
-  implicit none
- 
-  integer, intent(out) :: nbrow, nbcol ! Number of blocks along 
-  integer, intent(in) :: nrows, ncols
-  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
-
-  ! First we need to calculate the number of blocks we'll be getting along
-  ! each dimension of the local array.
-  nbrow = int(nrows/blkFact(1))
-  nbcol = int(ncols/blkFact(2))
-
-  ! Then add in any extra blocks if not evently distributable
-  if ( mod(nrows,blkFact(1)) /= 0 ) then
-    nbrow = nbrow + 1
-  endif
-  if ( mod(ncols,blkFact(2)) /= 0 ) then
-    nbcol = nbcol + 1
-  endif
-
-end subroutine numRowColBlocks
-
-! This subroutine is responsible for calculating and allocating the
-! local array holding sections of the global array.
-subroutine allocLocalArray(local, valeDim, blkFact, myInfo, gridDim)
-  use O_Kinds
-
-  implicit none
-
-  complex (kind=double), intent(inout), allocatable, dimension(:,:) :: local
-  integer, intent(in) :: valeDim
-  integer, intent(in) :: numprocs
-  integer, dimension(3), intent(in) :: myInfo  ! prow, pcol, mpirank
-  integer, dimension(2), intent(in) :: blkFact ! Blocking Factors
-  integer, dimension(2), intent(in) :: gridDim ! Process Grid Dims 
-
-  ! External subroutines
-  integer, external :: numroc
-
-  ! Use numroc to determine the number of rows and columns needed by the
-  ! distributed array.
-  nrows = numroc(valeDim, blkFact(1), myInfo(1), 0, gridDim(1))
-  ncols = numroc(valeDim, blkFact(2), myInfo(2), 0, gridDim(2))
-
-  allocate(local(nrows,ncols))
-  
-  ! Initialize the local array to zero
-  local(:,:) = cmplx(0.0_double,0.0_double)
-
-end subroutine allocLocalArray
- 
 ! This Subroutine is responsible for reading only the blocks of data for the
 ! current processes local array. We need to loop over each block in the 
 ! distributed matrix, calculate the section of data to be read from HDF5.
@@ -471,40 +290,6 @@ subroutine storeIntoLocal(localArr, tempReal, tempImag)
 end subroutine
 
 
-! This subroutine creates a scalapack context and initializes the grid
-subroutine initSl(slctxt, grimDim, myInfo)
-  implicit none
-
-  ! Define passed parameters
-  integer, intent(out) :: slctxt
-  integer, intent(inout), dimension(2) :: gridDim
-  integer, intent(inout), dimension(3) :: myInfo 
-  call BLACS_GET(-1,0, slctxt)
-  call BLACS_GRIDINIT(slctxt, 'r', gridDim(1), gridDim(2))
-  call BLACS_GRIDINFO(slctxt, gridDim(1), gridDim(2), myInfo(1), myInfo(2))
-
-end subroutine
-
-! This subroutine creates the scalapack array descriptors for the local
-! Matrices
-subroutine getArrDesc(slctxt, blkFact, localLD, desca, desb, descz)
-  implicit none
-
-  ! Define passed parameters
-  integer, intent(in) :: slctxt
-  integer, intent(inout), dimension(9) :: desca, descb, descz
-
-  call descinit(desca, Adim1, Adim2, blkFact(1), blkFact(2),  & 
-    & 0, 0, slctxt, size(localA,1), info)
-
-  call descinit(descb, Bdim1, Bdim2, blkFact(1), blkFact(2),  & 
-    & 0, 0, slctxt, size(localB,1), info)
-
-  call descinit(descz, Adim1, Adim2, blkFact(1),blkFact(2),0,0, &
-    & slctxt, size(localZ,1), info)
-end subroutine getArrDesc
-
-
 ! This subroutine serves as the main interface/wrapper to the zhegvx lapack
 ! routine.
 subroutine sl_PZHEGVX(localA, localB, localZ, desca, descb, descz, &
@@ -734,4 +519,4 @@ subroutine cleanUpSl(slctxt, desca, descb, descz)
 
 end subroutine cleanUpSl
 
-end module O_SlSubs
+end module O_ParallelMain

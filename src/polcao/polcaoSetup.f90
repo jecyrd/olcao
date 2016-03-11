@@ -1,11 +1,23 @@
 ! Documentation here
 !
-module O_Parallel
+module O_ParallelSetup
   use MPI
   implicit none
 
   contains
 
+  type BlacsInfo
+    integer :: prow
+    integer :: pcol
+
+    ! Holds information about the size of blocks
+    integer :: blkRows
+    integer :: blkCols
+
+    integer :: mpirank
+
+
+  end type BlacsInfo
   ! This subroutine is used to balance an loop for use with MPI.  The input
   ! (toBalance) is the number of things that needs to be split up. The
   ! output (initialVal, finalVal) are the start and stop of array indices.
@@ -114,6 +126,42 @@ subroutine findPackedIndex(packedIndex, x, y)
   
 end subroutine findPackedIndex
 
+
+! This subroutine does a binary search on atomSites%cumulValeStates and
+! atomSites%cumulCoreStates, to find the atom sites needed to be calculated
+! given the scalapack distributions.
+subroutine getAtomPairs(localIndx)
+
+  use O_AtomicSites, only: atomSites
+
+  implicit none
+
+  integer, intent(out), dimension(2) :: iMinMax
+  integer, intent(out), dimension(2) :: jMinMax
+
+  integer :: i,j
+
+  integer :: found=0
+
+  integer :: mid = len(atomSites)/2
+
+  ! GET SCALAPACK PARAMETERS CHECK NOTES
+  call getGlobalIndices(localIndx)
+
+  mid = len(atomSites)/2
+  i = 1
+  j = len(atomSites)
+  do while( i <= j )
+    if ( atomSites(m)%cumulValeStates < j ) then
+
+    else if ( A[mid] > j ) then
+
+    end if
+  end do 
+
+
+
+end subroutine getAtomPairs
 
 ! Purpose: This subroutine undoes some of the load balancing that is done
 ! previously. It would be extremely easy to combine this with the two other
@@ -330,4 +378,4 @@ subroutine writeValeVale(ga_valeVale,opCode,numKPoints,potDim, &
 
 end subroutine writeValeVale
 
-end module O_Parallel
+end module O_ParallelSetup

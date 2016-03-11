@@ -126,42 +126,52 @@ subroutine findPackedIndex(packedIndex, x, y)
   
 end subroutine findPackedIndex
 
-
-! This subroutine does a binary search on atomSites%cumulValeStates and
-! atomSites%cumulCoreStates, to find the atom sites needed to be calculated
-! given the scalapack distributions.
-subroutine getAtomPairs(localIndx)
+! Given an index gIndx=(1,valeDim), along a dimension gArrayDim=(1,2),
+! return the atom indx needed so that the local array can be filled.
+subroutine getValeAtom(gIndx, valeIndx)
 
   use O_AtomicSites, only: atomSites
 
   implicit none
 
-  integer, intent(out), dimension(2) :: iMinMax
-  integer, intent(out), dimension(2) :: jMinMax
+  ! Define Passed Parameters
+  integer, dimension(2), intent(in) :: gIndx ! Global Area of interest
+  integer, intent(out) :: valeIndx ! What we're looking for
 
-  integer :: i,j
+  if ( gIndx <= atomSites(1)%cumulValeStates ) then
+    valeIndx == 1
+  else
+    do i=1, len(atomSites)-1
+      if (gIndx >= atomSites(i)%cumulValeStates .and. &
+            gIndx < atomSites(i+1)%cumulValeStates) then
+        valeindx = i 
+      endif
+    enddo
+  endif
+end subroutine getValeAtom
+! Given an index gIndx=(1,coreDim), along a dimension gArrayDim=(1,2),
+! return the atom indx needed so that the local array can be filled.
+subroutine getValeAtom(gIndx, coreIndx)
 
-  integer :: found=0
+  use O_AtomicSites, only: atomSites
 
-  integer :: mid = len(atomSites)/2
+  implicit none
 
-  ! GET SCALAPACK PARAMETERS CHECK NOTES
-  call getGlobalIndices(localIndx)
+  ! Define Passed Parameters
+  integer, dimension(2), intent(in) :: gIndx ! Global Area of interest
+  integer, intent(out) :: coreIndx
 
-  mid = len(atomSites)/2
-  i = 1
-  j = len(atomSites)
-  do while( i <= j )
-    if ( atomSites(m)%cumulValeStates < j ) then
-
-    else if ( A[mid] > j ) then
-
-    end if
-  end do 
-
-
-
-end subroutine getAtomPairs
+  if ( gIndx <= atomSites(1)%cumulCoreStates ) then
+    coreIndx == 1
+  else
+    do i=1, len(atomSites)-1
+      if (gIndx >= atomSites(i)%cumulCoreStates .and. &
+            gIndx < atomSites(i+1)%cumulCoreStates) then
+        coreIndx = i 
+      endif
+    enddo
+  endif
+end subroutine getValeAtom
 
 ! Purpose: This subroutine undoes some of the load balancing that is done
 ! previously. It would be extremely easy to combine this with the two other

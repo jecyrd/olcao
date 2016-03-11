@@ -62,23 +62,6 @@ module O_Parallel
 
   end type Array Info
 
-! Placeholder routine containing some notes on what needs to happen before
-! we do blacs/pblas/scalapack stuff
-subroutine asdfasdfasdf()
-  ! First we need to know how many processes are participating in the 
-  ! calculation.
-
-  ! Then we need to create a communicator handle for just the participating
-  ! processes, incase they need to barrier, or do any other "world" comms
-  ! while there are excluded processes.
-  
-  ! Then we need to create a condition that excludes processes who are not
-  ! participating in the communication.
-  if (myinfo%mpirank < x ) then
-  endif
-  call MPI_Barrier(MPI_COMM_WORLD, mpierr)
-end subroutine asdfasdfasdf
-
 ! This subroutine calculates the process grid dimensions and sets up the 
 ! blacs context for a distributed operation
 subroutine setupBlacs(blcsinfo)
@@ -100,6 +83,8 @@ subroutine setupBlacs(blcsinfo)
 
 end subroutine setubBlacs
 
+! This subroutine calculates the dimensions of the processor grid given 
+! the number of available processes
 subroutine calcProcGrid(blcsinfo)
   implicit none
 
@@ -203,9 +188,9 @@ subroutine allocLocalArray(arrinfo, blcsinfo)
 #else
   arrinfo%local(:,:) = 0.0_double
 #endif
-
 end subroutine allocLocalArray
 
+! This subroutine initializes the BLACS array descriptor and 
 subroutine getArrDesc(arrinfo, blcsinfo)
   implicit none
   
@@ -225,6 +210,55 @@ subroutine getArrDesc(arrinfo, blcsinfo)
   endif
 
 end subroutine getArrDesc
+
+! This subroutine calculates the global array coordinates for a local block
+! and will aid us in both Setup and Main when trying to populate arrays.
+!
+! Please refer to http://netlib.org/scalapack/slug/node76.html
+! For detailed information relating to this subroutine.
+!
+! Using the documentation above we have the follow equations.
+! a=l*MB+x           b=m*NB+y   
+! l = (I-1)/(Pr*MB)  m = (J-1)/(Pr*NB)
+! I=(l*Pr + pr)+MB+x J=(m*Pc + pc)+MB+y
+! Where (a,b)   are the coordinates with the local array.
+!       (x,y)   are the coordinates within a local block in the local array.
+!       (l,m)   are the coordinates of a block within the local array.
+!       (I,J)   are the coordinates in the global array.
+!       (Pr,Pc) are the size of the process grid.
+!       (pr,pc) are the coordinates of a process in the grid.
+!
+! What we need to calculate is 2 sets of coordinates, first the global 
+! coordinates of the "top left" element of a local block. Second the global
+! coordinates of the "bottom right" element of a local block. This'll allow us
+! to tell which elements of the global array we require to fill a local block.
+!
+! Using the above equations we can obtain:
+!  I = (a-x)*Pr + 1    J = (b-y)*Pc + 1
+! By setting x and y to 0. We can obtain the "top left" global coordinate. Then
+! by setting x and y to (MB-1) and (NB-1) respectively, we obtain the
+! "bottom right" coordinate of the global array.
+!
+! For this to work the passed parameters a,b should be the coordinate in
+! the local array corresponding to the "top left" element of some local block.
+subroutine localToGlobalMap(a, b, glo, ghi, arrinfo, blcsinfo)
+  implicit none
+
+  ! Define passed parameters
+  type(BlacsInfo), intent(in) :: blcsinfo
+  type(ArrayInfo), intent(in) :: arrinfo
+  integer, intent(in) :: a,b
+  integer, dimension(2), intent(out) :: glo, ghi ! target global values
+
+  ! Calculate the upper left corner
+  glo(1) = (a-0)*blcsinfo%prows + 1
+  glo(2) = (b-0)*blcsinfo%pcols + 1
+
+  ! Calculate the bottom left corner
+  ghi(1) = (a-arrinfo%mb)*blcsinfo%prows + 1
+  ghi(2) = (a-arrinfo%nb)*blcsinfo%pcols + 1
+
+end subroutine globalToLocalMap
 
 end module O_Parallel
 

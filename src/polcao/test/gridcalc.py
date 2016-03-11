@@ -4,21 +4,18 @@ import math as m
 
 
 def gridCalc(numprocs):
-  npcol = 2*int(m.sqrt(numprocs))
-  for x in range(npcol,0,-1):
-    if (numprocs % x == 0):
-      npcol = x
-      break
-  
-  nprow = numprocs / npcol
-  if (nprow > npcol):
-    x = npcol
-    npcol = nprow
-    nprow = x
+  prow = int(m.sqrt(numprocs))
+  #pcol = int(m.sqrt(numprocs))
 
-  return nprow, npcol
+  #if (numprocs-(prow*pcol) >= prow):
+  #  prow+=1
+  pcol = numprocs/prow
+
+  return prow,pcol
 
 
-for x in xrange(1023):
-  #nprow, npcol = gridCalc(x+2)
-  #print "Numprocs: ", x+2, "nprow: ", nprow, "npcol: ", npcol
+for x in xrange(2,1025):
+  nprow, npcol = gridCalc(x)
+  print "Numprocs: ", x, 'Extra:',(x)-nprow*npcol, "nprow: ", nprow, "npcol: ", npcol
+
+  print "\t\tStuff: ", x/npcol, (x-1)/npcol

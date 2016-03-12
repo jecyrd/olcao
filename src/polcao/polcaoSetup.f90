@@ -6,18 +6,11 @@ module O_ParallelSetup
 
   contains
 
-  type BlacsInfo
-    integer :: prow
-    integer :: pcol
+  type AtomPair
+    integer :: i
+    integer :: j
+  end type AtomPair
 
-    ! Holds information about the size of blocks
-    integer :: blkRows
-    integer :: blkCols
-
-    integer :: mpirank
-
-
-  end type BlacsInfo
   ! This subroutine is used to balance an loop for use with MPI.  The input
   ! (toBalance) is the number of things that needs to be split up. The
   ! output (initialVal, finalVal) are the start and stop of array indices.
@@ -126,8 +119,114 @@ subroutine findPackedIndex(packedIndex, x, y)
   
 end subroutine findPackedIndex
 
+! This subroutine is responsible for deciding the atom pairs needed to be
+! calculated by a process in order to fill their local block regions. It is to
+! be used before the Atom-Atom loop in the integralsSCF subroutines.
+!
+! We start by looping over the local blocks, then using the subroutine
+! localToGlobalMap to find our indices. Global to local max will give us
+! 4 indices corresponding to the "top left" and "bottom right" elements we need
+! from the global arrays. We can then do searches using getValeAtom, getCoreAtom
+! which will define the atom pairs necessary to fill our arrays.
+subroutine getAtomPairs(valeArrInfo, coreArrInfo, cvArrInfo,blcsinfo, atomPairs)
+  use O_Parallel, only :: localToGlobalMap
+
+  implicit none
+
+  ! Define passed parameters
+  type(ArrayInfo), intent(inout) :: valeArrinfo
+  type(ArrayInfo), intent(inout) :: coreArrinfo
+  type(ArrayInfo), intent(inout) :: cvArrinfo
+  type(BlacsInfo), intent(inout) :: blcsinfo
+  type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairs
+
+  ! Define local variables
+  integer, dimension(2) :: glo, ghi ! Returned indices from globalToLocalMAp
+  integer, dimension(2) :: vlo, vhi ! vale returned indices from search 
+  integer, dimension(2) :: clo, chi ! core returned indices from search 
+  integer, dimension(2) :: cvlo, cvhi ! CV returned indices from search 
+  integer :: nrBlocks ! The number of blocks along the local row
+  integer :: ncBlocks ! The number of blocks along the local column
+  integer :: a,b ! Starting block indices to feed to localToGlobalMap
+  integer :: i,j
+
+
+  ! First we need to calculate the blocks along the local row and columns
+  ! so we can loop over them. For now we'll neglect any fringe cases where
+  ! we have odd shaped blocks.
+  nrBlocks = len(arrinfo%local,1)/arrinfo%mb
+  ncBlocks = len(arrinfo%local,1)/arrinfo%nb
+
+  ! Now we loop over these blocks and record the results in atomPairs
+  do i=1, nrBlocks
+    do j=1, ncBlocks
+      ! For localToGlobalMap we need the the starting indices of the block (a,b)
+      ! This is just the array index minus 1, times the block size, plus 1
+      aVale = (i-1)*valeArrinfo%mb+1
+      bVale = (j-1)*valeArrinfo%nb+1
+      aCore = (i-1)*coreArrinfo%mb+1
+      bCore = (j-1)*coreArrinfo%nb+1
+      aVC   = (i-1)*cvArrinfo%mb+1
+      bVC   = (j-1)*cvArrinfo%nb+1
+
+      ! Now we get the vale indices having to be searched
+      call localToGlobalMap(a,b, glo, ghi, valeArrinfo, blcsinfo)
+      ! Now we do the searches for the vale atoms
+      call getValeAtom(glo(1), vlo(1))
+      call getValeAtom(glo(2), vlo(2))
+      call getValeAtom(ghi(1), vhi(1))
+      call getValeAtom(ghi(2), vhi(2))
+      
+      ! Now we get the core indices having to be searched
+      call localToGlobalMap(a,b, glo, ghi, coreArrinfo, blcsinfo)
+      ! Now we do the searches for the core atoms
+      call getCoreAtom(glo(1), clo(1))
+      call getCoreAtom(glo(2), clo(2))
+      call getCoreAtom(ghi(1), chi(1))
+      call getCoreAtom(ghi(2), chi(2))
+
+      ! Now we get the coreVale indices having to be searched
+      call localToGlobalMap(a,b, glo, ghi, cvArrinfo, blcsinfo)
+      ! Now we do the searches for the valeCore atoms
+      call getcoreAtom(glo(1), cvlo(1))
+      call getValeAtom(glo(2), cvlo(2))
+      call getcoreAtom(ghi(1), cvhi(1))
+      call getValeAtom(ghi(2), cvhi(2))
+
+      ! Now we have to test whether or not the returned indices have any overlap
+      ! so we can avoid doing any working. This'll be done by the testAtomDupe
+      ! subroutine below.
+      call testAtomDupe(vlo,vhi,clo,chi,cvlo,cvhi, atomPairs)
+
+    enddo
+  enddo
+end subroutine getAtomPairs
+
+! This subroutine is responsible for checking the ranges of atoms that need
+! to be calculated in order to fill the local matrices, to make sure that no
+! extra work will be done. It'll then copy the atomPairs structure into a 
+! temporary structure, so it can reallocate the atomPairs and add the necessary
+! atom ranges.
+subroutine testAtomDupe(vlo, vhi, clo, chi, cvlo, cvhi, atomPairs)
+  implicit none
+
+  ! Define passed parameters
+  integer, dimension(2) :: vlo, vhi, clo, chi, cvlo, cvhi
+  type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairs
+
+  ! Define local variables
+  type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairsTmp
+
+
+end subroutine testAtomDupe
+
 ! Given an index gIndx=(1,valeDim), along a dimension gArrayDim=(1,2),
 ! return the atom indx needed so that the local array can be filled.
+!
+! Future improvement, write out the conditions necessary so that getValeAtom
+! can be combined with getCoreAtom in the same loop. Currently I just want
+! things to work. Additionally evaluate the necessity of a binary search over
+! a linear one.
 subroutine getValeAtom(gIndx, valeIndx)
 
   use O_AtomicSites, only: atomSites
@@ -151,7 +250,7 @@ subroutine getValeAtom(gIndx, valeIndx)
 end subroutine getValeAtom
 ! Given an index gIndx=(1,coreDim), along a dimension gArrayDim=(1,2),
 ! return the atom indx needed so that the local array can be filled.
-subroutine getValeAtom(gIndx, coreIndx)
+subroutine getCoreAtom(gIndx, coreIndx)
 
   use O_AtomicSites, only: atomSites
 
@@ -171,7 +270,7 @@ subroutine getValeAtom(gIndx, coreIndx)
       endif
     enddo
   endif
-end subroutine getValeAtom
+end subroutine getCoreAtom
 
 ! Purpose: This subroutine undoes some of the load balancing that is done
 ! previously. It would be extremely easy to combine this with the two other

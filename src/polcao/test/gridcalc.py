@@ -18,4 +18,4 @@ for x in xrange(2,1025):
   nprow, npcol = gridCalc(x)
   print "Numprocs: ", x, 'Extra:',(x)-nprow*npcol, "nprow: ", nprow, "npcol: ", npcol
 
-  print "\t\tStuff: ", x/npcol, (x-1)/npcol
+#  print "\t\tStuff: ", x/npcol, (x-1)/npcol

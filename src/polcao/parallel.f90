@@ -74,7 +74,7 @@ subroutine setupBlacs(blcsinfo)
   call MPI_Comm_size(MPI_COMM_WORLD, blcsinfo%mpisize, mpierr)
 
   ! First we need to calculate the processor grid
-  calcProcgrid(blcsinfo)
+  calcProcGrid(blcsinfo)
 
   call BLACS_GET(-1,0, blcsinfo%ctxt)
   call BLACS_GRIDINIT(blcsinfo%ctxt, 'r', blcsinfo%prows, blcsinfo%pcols)
@@ -134,25 +134,30 @@ subroutine getBlockDims(arrinfo, blcsinfo)
   ! routine we know that procGridRows will be <= procGridCols.
   ! Because of this we'll do the integer divide on procGridCols, ensuring
   ! that our blocks are square.
-  arrinfo%mb =  int(arrinfo%I / blcsinfo%pcols)
-  arrinfo%nb =  int(arrinfo%J / blcsinfo%pcols)
+  if (arrinfo%I == arrinfo%J)
+    arrinfo%mb =  int(arrinfo%I / blcsinfo%pcols)
+    arrinfo%nb =  int(arrinfo%J / blcsinfo%pcols)
+  else
+    arrinfo%mb =  int(arrinfo%I / blcsinfo%prows)
+    arrinfo%nb =  int(arrinfo%J / blcsinfo%pcols)
+  endif
 
   ! For the case that global matrix doesn't divide perfectly by our choice in
   ! block size, there will be a couple extra rows and columns that need to be 
   ! asssigned to a process.
   ! The total dim I divided by the block dimension, tells us how many blocks
-  ! are going to be along a dimensions. WHen we mod this by the rows in the 
+  ! are going to be along a dimensions. When we mod this by the rows in the 
   ! process grid, it tells us the row  coordinate in the process grid the 
   ! extra rows belong to. This of course also works for the columns.
   extraRow = mod( arrinfo%I/arrinfo%mb, blcsinfo%prows)
   extraCol = mod( arrinfo%J/arrinfo%nb, blcsinfo%pcols)
 
-  if ( extraRow == myinfo%prow ) then
+  if ( extraRow == arrinfo%myprow ) then
     myinfo%extraBlockRows = mod(arrinfo%I, arrinfo%nb)
   else
     myinfo%extraBlockRows = 0
   endif
-  if ( extraCol == myinfo%pcol ) then
+  if ( extraCol == arrinfo%mypcol ) then
     myinfo%extraBlockCols = mod(arrinfo%J, arrinfo%nb)
   else
     myinfo$extraBlockCols = 0

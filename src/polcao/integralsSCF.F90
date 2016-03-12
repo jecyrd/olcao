@@ -110,10 +110,8 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
          ! lattice points will be considered for integration.
 
    ! Define variables for MPI, and distributed operations
-   type(BlacsInfo) :: BlcsInfo
    type(ArrayInfo) :: vvArrayInfo
    type(ArrayInfo) :: ccArrayInfo
-   type(ArrayInfo) :: cvArrayInfo
 
    ! Define variables for gauss integrals
    integer :: l1l2Switch

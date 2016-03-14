@@ -202,6 +202,55 @@ subroutine getAtomPairs(valeArrInfo, coreArrInfo, cvArrInfo,blcsinfo, atomPairs)
   enddo
 end subroutine getAtomPairs
 
+! This function checks if two rectangles overlap. Our rectangles are given by
+! lo (upper left corner) and hi (lower right corner). There are 4 conditions we
+! can check to see if two rectangles overlap. We'll call them R1 and R2 to refer
+! to all 4 coordinates specified and use "lo" and "hi" to illustrate the 
+! conditions, with respective 1 or 2.
+!  1.) If the R1 left edge is to the right of R2 right edge. Then no overlap.
+!         or if  lo1(2) < hi2(2)  then there is overlap
+!
+!  2.) If R1 right edge is to the left of R2 left edge. Then no overlap.
+!         or if  hi1(2) > lo2(2)  then there is overlap
+!
+!  3.) If R1 top edge is below R2 bottom edge. Then no overlap.
+!         or if  lo1(1) > hi2(1)  then there is overlap
+!
+!  4.) If R1 bottom edge is above R2 top edge. Then no overlap.
+!         or if  hi1(1) < lo2(1)  then there is overlap
+!
+function checkRectOverlap(lo1, hi1, lo2, hi2)
+  implicit none
+
+  ! Define self and passed parameters
+  integer :: checkRangeOverlap
+  integer, intent(in), dimension(2) :: lo1, hi1, lo2, hi2
+
+  if ( (lo1(2)<hi2(2) .and. (hi(2)>lo(2)) .and. &
+     & (lo1(1)>hi2(1) .and. hi(1)<lo2(1)) ) then
+    return 1
+  endif
+
+  ! else    
+  return 0
+end function checkRangeOverlap
+
+! This subroutine finds the intersection of two rectangles if they overlap.
+! Only use this subroutine if checkRectOverlap function returns true.
+subroutine getOverlapTriangle(lo1, hi1, lo2, hi2, loSect, hiSect)
+  implicit none
+
+  ! Define passed parameters
+  integer, intent(in), dimension(2) :: lo1, hi1, lo2, hi2
+  integer, intent(out), dimension(2) :: loSect, hiSect
+
+  loSect(1) = max(lo1(1), lo2(1))
+  loSect(2) = max(lo1(2), lo2(2))
+  hiSect(1) = max(hi1(1), hi2(1))
+  hiSect(2) = max(hi2(2), hi2(2))
+
+end subroutine getOverlapTriangle
+
 ! This subroutine is responsible for checking the ranges of atoms that need
 ! to be calculated in order to fill the local matrices, to make sure that no
 ! extra work will be done. It'll then copy the atomPairs structure into a 
@@ -211,12 +260,29 @@ subroutine testAtomDupe(vlo, vhi, clo, chi, cvlo, cvhi, atomPairs)
   implicit none
 
   ! Define passed parameters
-  integer, dimension(2) :: vlo, vhi, clo, chi, cvlo, cvhi
+  integer, intent(in), dimension(2) :: vlo, vhi, clo, chi, cvlo, cvhi
   type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairs
 
   ! Define local variables
   type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairsTmp
 
+  ! Check if vale and core overlap
+  if ( checkRectOverlap(vlo, vhi, clo, chi) ) then
+    call getOverlapTriangle(vlo, vhi, clo, chi, loSect, hiSect)
+    ! Add appropriate ones to atom pairs
+  endif 
+ 
+  ! Check if vale and coreVale overlap
+  if ( checkRectOverlap(vlo, vhi, cvlo, cvhi) ) then
+    call getOverlapTriangle(vlo, vhi, cvlo, cvhi, loSect, hiSect)
+    ! Add appropriate ones to atom pairs
+  endif
+
+  ! Check of core and coreVale overlap
+  if ( checkRectOverlap(clo, chi, cvlo, cvhi) ) then
+    call getOverlapTriangle(clo, chi, cvlo, cvhi, loSect, hiSect)
+    ! Add appropriate ones to atom pairs
+  endif
 
 end subroutine testAtomDupe
 

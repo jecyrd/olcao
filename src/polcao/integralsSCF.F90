@@ -113,6 +113,9 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
    type(ArrayInfo) :: vvArrayInfo
    type(ArrayInfo) :: ccArrayInfo
 
+   ! Define structure to hold atomPairs in
+   type(AtomPair), allocatable, dimension(:) :: atomPairs
+
    ! Define variables for gauss integrals
    integer :: l1l2Switch
    integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
@@ -134,16 +137,15 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
    allocate (currentPairGamma    (maxNumStates,maxNumStates))
 #endif
    
-   call setuparrayDesc(vvArrayInfo, BlcsInfo, valeDim, valeDim)
-   call setuparrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim)
+   call setuparrayDesc(vvArrayInfo, BlcsInfo, valeDim, valeDim, numKPoints)
+   call setuparrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
  
-   call get me dem pairs brah
-   call getValeAtom(localIndx, iMinMax, jMinMax)
+   call getAtomPairs(vvArrayInfo, ccArrInfo, cvArrInfo, blcsinfo, atomPairs)
 
    ! Begin atom-atom overlap loops.
-   do atomLoop = minAtom, maxAtom
-   !do i = iMinMax(1), iMinMax(2)
-   !  do j = jMinMax(1), jMinMax(2)
+   do atomLoop = 1, size(atomPairs,1)
+      i = atomPairs(atomLoop)%I
+      j = atomPairs(atomLoop)%J
 
       ! Get the actual atom numbers of the atoms in this atomLoop pair.
       call findUnpackedIndices(atomLoop,i,j)

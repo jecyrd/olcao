@@ -7,16 +7,16 @@ module O_ParallelSetup
   contains
 
   type AtomPair
-    integer :: i
-    integer :: j
+    integer :: I
+    integer :: J
   end type AtomPair
 
-  ! This subroutine is used to balance an loop for use with MPI.  The input
-  ! (toBalance) is the number of things that needs to be split up. The
-  ! output (initialVal, finalVal) are the start and stop of array indices.
-  ! The subroutine currently works in the way that if a loop is not evenly
-  ! distributable then the extra elements are added first to the n process,
-  ! then to the n-1 process, then to the n-2 process, and so on.
+! This subroutine is used to balance an loop for use with MPI.  The input
+! (toBalance) is the number of things that needs to be split up. The
+! output (initialVal, finalVal) are the start and stop of array indices.
+! The subroutine currently works in the way that if a loop is not evenly
+! distributable then the extra elements are added first to the n process,
+! then to the n-1 process, then to the n-2 process, and so on.
 subroutine loadBalMPI(toBalance,initialVal,finalVal,myProc,numProcs)
   implicit none
 
@@ -124,11 +124,12 @@ end subroutine findPackedIndex
 ! be used before the Atom-Atom loop in the integralsSCF subroutines.
 !
 ! We start by looping over the local blocks, then using the subroutine
-! localToGlobalMap to find our indices. Global to local max will give us
+! localToGlobalMap to find our indices. Global to local map will give us
 ! 4 indices corresponding to the "top left" and "bottom right" elements we need
 ! from the global arrays. We can then do searches using getValeAtom, getCoreAtom
 ! which will define the atom pairs necessary to fill our arrays.
-subroutine getAtomPairs(valeArrInfo, coreArrInfo, cvArrInfo,blcsinfo, atomPairs)
+subroutine getAtomPairs(valeArrInfo, coreArrInfo, cvArrInfo, blcsinfo, &
+    & atomPairs)
   use O_Parallel, only :: localToGlobalMap
 
   implicit none
@@ -149,7 +150,6 @@ subroutine getAtomPairs(valeArrInfo, coreArrInfo, cvArrInfo,blcsinfo, atomPairs)
   integer :: ncBlocks ! The number of blocks along the local column
   integer :: a,b ! Starting block indices to feed to localToGlobalMap
   integer :: i,j
-
 
   ! First we need to calculate the blocks along the local row and columns
   ! so we can loop over them. For now we'll neglect any fringe cases where
@@ -206,19 +206,28 @@ end subroutine getAtomPairs
 ! lo (upper left corner) and hi (lower right corner). There are 4 conditions we
 ! can check to see if two rectangles overlap. We'll call them R1 and R2 to refer
 ! to all 4 coordinates specified and use "lo" and "hi" to illustrate the 
-! conditions, with respective 1 or 2.
+! conditions, with respective 1 or 2. These conditions are applications of
+! deMorgan's law.
 !  1.) If the R1 left edge is to the right of R2 right edge. Then no overlap.
-!         or if  lo1(2) < hi2(2)  then there is overlap
+!         or if  lo1(1) =< hi2(1)  then there is overlap
 !
 !  2.) If R1 right edge is to the left of R2 left edge. Then no overlap.
-!         or if  hi1(2) > lo2(2)  then there is overlap
+!         or if  hi1(1) >= lo2(1)  then there is overlap
 !
 !  3.) If R1 top edge is below R2 bottom edge. Then no overlap.
-!         or if  lo1(1) > hi2(1)  then there is overlap
+!         or if  lo1(2) >= hi2(2)  then there is overlap
 !
 !  4.) If R1 bottom edge is above R2 top edge. Then no overlap.
-!         or if  hi1(1) < lo2(1)  then there is overlap
+!         or if  hi1(2) =< lo2(2)  then there is overlap
 !
+! Well this is all good. But this only works for cartesian style coordinate
+! systems. For matrix notice we are effectively working in cartesian quadrant 4.
+! Also with matrix notation our first element corresponds to rows, which is 
+! effectively the cartesian Y coordinate. So for the conditions above, we must 
+! transpose our indices such that index 1 is swapped with index 2. And the 
+! second 2 conditions must be negative ie: condition 3: -lo1(1)>-hi2(2). This
+! transform will effectively put the matrix indices into the correct
+! cartesian notation.
 function checkRectOverlap(lo1, hi1, lo2, hi2)
   implicit none
 
@@ -226,8 +235,8 @@ function checkRectOverlap(lo1, hi1, lo2, hi2)
   integer :: checkRangeOverlap
   integer, intent(in), dimension(2) :: lo1, hi1, lo2, hi2
 
-  if ( (lo1(2)<hi2(2) .and. (hi(2)>lo(2)) .and. &
-     & (lo1(1)>hi2(1) .and. hi(1)<lo2(1)) ) then
+  if ( (lo1(2)=<hi2(2)) .and. (hi1(2)>=lo2(2)) .and. &
+     & (-lo1(1)>=-hi2(1)) .and. (-hi1(1)<=-lo2(1)) ) then
     return 1
   endif
 
@@ -237,7 +246,10 @@ end function checkRangeOverlap
 
 ! This subroutine finds the intersection of two rectangles if they overlap.
 ! Only use this subroutine if checkRectOverlap function returns true.
-subroutine getOverlapTriangle(lo1, hi1, lo2, hi2, loSect, hiSect)
+! Typically all four statements would be max, but as detailed above the 
+! matrix notation is a little different than cartesian coordinate system,
+! so we use min for the bottom right corner of the overlap.
+subroutine getOverlapRect(lo1, hi1, lo2, hi2, loSect, hiSect)
   implicit none
 
   ! Define passed parameters
@@ -246,10 +258,57 @@ subroutine getOverlapTriangle(lo1, hi1, lo2, hi2, loSect, hiSect)
 
   loSect(1) = max(lo1(1), lo2(1))
   loSect(2) = max(lo1(2), lo2(2))
-  hiSect(1) = max(hi1(1), hi2(1))
-  hiSect(2) = max(hi2(2), hi2(2))
+  hiSect(1) = min(hi1(1), hi2(1))
+  hiSect(2) = min(hi1(2), hi2(2))
 
-end subroutine getOverlapTriangle
+end subroutine getOverlapRect
+
+! This function returns true if an i,j pair is inside some rectangle, where
+! loOvlp is the top left corner, and hiOvlp is the bottom right corner.
+function inRectangle(i,j, loOvlp, hiOvlp)
+  implicit none
+
+  ! Define passed parameters and return value
+  integer :: inintersection
+  integer, intent(in) :: i,j
+  integer, intent(in), dimension(2) :: loOvlp, hiOvlp
+
+  if ( ((i>=loOvlp[0]) .and. (i<=hiOvlp[0])) .and. &
+    &  ((j>=loOvlp[1]) .and. (j<=hiOvlp[1])) ) then
+    return 1
+  endif
+  ! else
+  return 0
+end function inRectangle
+
+! This subroutine appends an atom pair to the list of atomPairs
+subroutine addAtomPair(i,j, atomPairs)
+  implicit none
+
+  ! Define passed parameters
+  integer, intent(in) :: i,j
+  type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairs
+
+  ! Define local variables
+  type(AtomPair), allocatable, dimension(:) :: tmpPairs
+  integer :: newsize
+
+  newsize = size(atomPairs,1)+1
+  ! Allocate some initial space in tmpPairs
+
+  allocate(tmpPairs(newSize))
+
+  tmpPairs = atomPairs
+  tmpPairs(size(tmpPairs,1))%I = i
+  tmpPairs(size(tmpPairs,1))%J = j
+
+  deallocate(atomPairs)
+  allocate(atomPairs(newSize))
+  atomPairs = tmpPairs
+
+  deallocate(tmpPairs)
+
+end subroutine addAtomPairs
 
 ! This subroutine is responsible for checking the ranges of atoms that need
 ! to be calculated in order to fill the local matrices, to make sure that no
@@ -264,25 +323,63 @@ subroutine testAtomDupe(vlo, vhi, clo, chi, cvlo, cvhi, atomPairs)
   type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairs
 
   ! Define local variables
-  type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairsTmp
+  integer, dimension(2) :: loOvlp1, hiOvlp1, loOvlp2, hiOvlp2
+  integer :: i,j
+  
+  ! Initialize intersections 
+  loOvlp1(:) = 0
+  hiOvlp1(:) = 0
+  loOvlp2(:) = 0
+  hiOvlp2(:) = 0
+
+  ! First add all vale atom pairs
+  do i=vlo(1), vlo(2)
+    do j=vhi(1), vhi(2)
+      addAtomPairs(i,j, atomPairs)
+    enddo
+  enddo
 
   ! Check if vale and core overlap
   if ( checkRectOverlap(vlo, vhi, clo, chi) ) then
-    call getOverlapTriangle(vlo, vhi, clo, chi, loSect, hiSect)
+    call getOverlapRect(vlo, vhi, clo, chi, loOvlp1, hiOvlp1)
     ! Add appropriate ones to atom pairs
   endif 
- 
+
+  ! Now add the core pairs
+  do i=clo(1), clo(2)
+    do j=chi(1), chi(2)
+      if (.not. inRectangle(i,j, loOvlp1, hiOvlp1) then
+        addAtomPairs(i,j, atomPairs)
+      endif
+    enddo
+  enddo
+
+  ! Now in order to add the valeCore we need the overlaps of core with coreVale
+  ! and the overlap of vale with coreVale.
+  loOvlp1(:) = 0
+  hiOvlp1(:) = 0
   ! Check if vale and coreVale overlap
   if ( checkRectOverlap(vlo, vhi, cvlo, cvhi) ) then
-    call getOverlapTriangle(vlo, vhi, cvlo, cvhi, loSect, hiSect)
+    call getOverlapRect(vlo, vhi, cvlo, cvhi, loOvlp1, hiOvlp1)
     ! Add appropriate ones to atom pairs
   endif
 
   ! Check of core and coreVale overlap
   if ( checkRectOverlap(clo, chi, cvlo, cvhi) ) then
-    call getOverlapTriangle(clo, chi, cvlo, cvhi, loSect, hiSect)
+    call getOverlapRect(clo, chi, cvlo, cvhi, loSect, hiSect)
     ! Add appropriate ones to atom pairs
   endif
+  
+  ! Now we add the valeCore pairs
+  do i=vclo(1), vclo(2)
+    do j=vchi(1), vchi(2)
+      if ( (.not. inRectangle(i,j, loOvlp1, hiOvlp1)) .and.
+           (.not. inRectangle(i,j, loOvlp2, hiOvlp2)) )then
+        addAtomPairs(i,j, atomPairs)
+      endif
+    enddo
+  enddo
+
 
 end subroutine testAtomDupe
 
@@ -314,6 +411,7 @@ subroutine getValeAtom(gIndx, valeIndx)
     enddo
   endif
 end subroutine getValeAtom
+
 ! Given an index gIndx=(1,coreDim), along a dimension gArrayDim=(1,2),
 ! return the atom indx needed so that the local array can be filled.
 subroutine getCoreAtom(gIndx, coreIndx)

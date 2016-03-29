@@ -39,6 +39,7 @@ module O_Parallel
     ! These are the size of the dimensions of the global array
     integer :: I
     integer :: J
+    integer :: numKP
 
     ! Togethere mb and nb define the block size used for the block-cyclic
     ! distribution.
@@ -54,12 +55,10 @@ module O_Parallel
 
     ! The local array that will contain the distributed data
 #ifndef GAMMA
-    complex (kind=double), allocatable, dimension(:,:) :: local
+    complex (kind=double), allocatable, dimension(:,:,:) :: local
 #else
     real (kind=double), allocatable, dimension(:,:) :: local
 #endif
-
-
   end type Array Info
 
 ! This subroutine calculates the process grid dimensions and sets up the 
@@ -95,15 +94,19 @@ subroutine calcProcGrid(blcsinfo)
   blcsinfo%pcols = blcsinfo%mpisize/prow
 end subroutine calcProcGrid
 
-subroutine setupArrayDesc(arrinfo, blcsinfo, numGlobalRows, numGlobalCols)
+subroutine setupArrayDesc(arrinfo, blcsinfo, numGlobalRows, numGlobalCols, &
+    & numKP)
   implicit none
 
   ! Define Passed Parameters
   type(BlacsInfo), intent(in) :: blcsinfo
   type(ArrayInfo), intent(inout) :: arrinfo
+  integer, intent(in) :: numGlobalRows, numGlobalCols
+  integer, intent(in) :: numKP
 
   arrinfo%I = numGlobalRows
   arrinfo%J = numGlobalCols
+  arrinfo%numKP = numKP
 
   ! First we need to calculate the blocking factors, mb, nb, and if there are
   ! any extra dimensions
@@ -185,7 +188,11 @@ subroutine allocLocalArray(arrinfo, blcsinfo)
   nlrows = numroc(arrinfo%I, arrinfo%mb, blcsinfo%myrow, 0, blcsinfo%prows)
   nlcols = numroc(arrinfo%J, arrinfo%nb, blcsinfo%mycol, 0, blcsinfo%pcols)
 
+#ifndef GAMMA
+  allocate(arrinfo%local(nlrows,nlcols,arrInfo%numKP))
+#else
   allocate(arrinfo%local(nlrows,nlcols))
+#endif
 
   ! initialize the local array to zero
 #ifndef GAMMA

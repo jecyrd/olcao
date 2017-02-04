@@ -1,4 +1,4 @@
 #!/bin/bash
 
-mpif90 -g kinds.f90 ../slSubs.F90 gaBlockCyclic.F90 -lga -larmci -mkl=cluster
+ifort -O3 -xhost ../bst23.f90 ./bstTest.f90 -o bstTest
 

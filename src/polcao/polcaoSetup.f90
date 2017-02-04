@@ -6,10 +6,41 @@ module O_ParallelSetup
 
   contains
 
+  ! This is a linked list element
   type AtomPair
     integer :: I
     integer :: J
+    type(atomPair), pointer :: next
   end type AtomPair
+
+! This subroutine initializes a new element in the atomPair linked list
+subroutine initAtomPair(atomNode)
+  implicit none
+
+  ! Define passed parameters
+  type(AtomPair), pointer :: atomNode
+
+  allocate(atomNode)
+
+  atomNode%next => null()
+  atomNode%I = -1
+  atomNode%J = -1
+end subroutine initAtomPair
+
+recursive subroutine destroyAtomList(root)
+  implicit none
+
+  ! Define passed parameters
+  type(AtomPair), pointer :: root
+
+  if (associated(root%next)) then
+    call destroyAtomList(root%next)
+  endif
+
+  deallocate(root)
+
+end subroutine destroyAtomList
+
 
 ! This subroutine is used to balance an loop for use with MPI.  The input
 ! (toBalance) is the number of things that needs to be split up. The
@@ -119,6 +150,38 @@ subroutine findPackedIndex(packedIndex, x, y)
   
 end subroutine findPackedIndex
 
+subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs)
+  implicit none
+  
+  ! Define passed parameters
+  type(ArrayInfo), intent(inout) :: vvinfo, ccinfo, cvinfo
+  type(BlacsInfo), intent(inout) :: blcsinfo
+  type(AtomPair), pointer :: atomPairs
+
+  ! Define local variables
+  integer, dimension(2) :: vvlo, vvhi
+  integer, dimension(2) :: cclo, cchi
+  integer, dimension(2) :: cvlo, cvhi
+
+  type(bst_node), pointer :: atomTree ! 2-3 tree to keep us from having 
+                                      ! duplicate atoms
+
+  ! Need to figure out a better way to initialize the atomTree but for now
+  ! we're just gonna put a zero in it, representing cantor pairing of 0,0
+  ! which we should never have anyway.
+  call tree_init(tree, 0)
+
+  ! We need to call getArrAtomPairs 3 times one for each array
+  call getArrAtomPairs(vvinfo, blcsinfo, atomPairs, atomTree, 0)
+  call getArrAtomPairs(ccinfo, blcsinfo, atomPairs, atomTree, 1)
+  call getArrAtomPairs(cvinfo, blcsinfo, atomPairs, atomTree, 2)
+
+  ! By this time we're finished with our atomTree, so we can destroy it.
+  ! All our atom pair data should be stored in the atomPairs linked list
+  call tree_destroy(atomTree)
+
+end subroutine getAtomPairs
+
 ! This subroutine is responsible for deciding the atom pairs needed to be
 ! calculated by a process in order to fill their local block regions. It is to
 ! be used before the Atom-Atom loop in the integralsSCF subroutines.
@@ -126,81 +189,110 @@ end subroutine findPackedIndex
 ! We start by looping over the local blocks, then using the subroutine
 ! localToGlobalMap to find our indices. Global to local map will give us
 ! 4 indices corresponding to the "top left" and "bottom right" elements we need
-! from the global arrays. We can then do searches using getValeAtom, getCoreAtom
-! which will define the atom pairs necessary to fill our arrays.
-subroutine getAtomPairs(valeArrInfo, coreArrInfo, cvArrInfo, blcsinfo, &
-    & atomPairs)
+! from the global arrays. We can then do searches using getAtoms which will 
+! define the atom pairs necessary to fill our arrays.
+!
+! This subroutine can only be run once for each local array. So it'll need to 
+! be called 3 times, once each for valeVale, coreCore, valeCore.
+subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
   use O_Parallel, only :: localToGlobalMap
 
   implicit none
 
   ! Define passed parameters
-  type(ArrayInfo), intent(inout) :: valeArrinfo
-  type(ArrayInfo), intent(inout) :: coreArrinfo
-  type(ArrayInfo), intent(inout) :: cvArrinfo
+  type(ArrayInfo), intent(inout) :: arrinfo
   type(BlacsInfo), intent(inout) :: blcsinfo
-  type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairs
+  type(AtomPair),  pointer :: atomPairs
+  type(bst_node), pointer :: atomTree
+  integer :: whichArr ! whichArr is a control variable to tell the subroutine
+                      ! which array it is working with. Options are:
+                      ! = 0  valeVale array
+                      !   1  coreCore array
+                      !   3  coreVale array
+  integer, dimension(2), intent(out) :: alo, ahi
+  
 
   ! Define local variables
   integer, dimension(2) :: glo, ghi ! Returned indices from globalToLocalMAp
-  integer, dimension(2) :: vlo, vhi ! vale returned indices from search 
-  integer, dimension(2) :: clo, chi ! core returned indices from search 
-  integer, dimension(2) :: cvlo, cvhi ! CV returned indices from search 
   integer :: nrBlocks ! The number of blocks along the local row
   integer :: ncBlocks ! The number of blocks along the local column
   integer :: a,b ! Starting block indices to feed to localToGlobalMap
-  integer :: i,j
+  integer :: i,j ! Loop Variables
+  integer :: extra ! Variable to denote irregular size in one dimension
+                   ! see localToGlobalMap in O_Parallel for description
+  integer :: firstDim, secondDim  ! These are control variables that are set
+                                  ! based on whichArr. These signal the getAtom
+                                  ! subroutine which cumul states it should use
 
-  ! First we need to calculate the blocks along the local row and columns
-  ! so we can loop over them. For now we'll neglect any fringe cases where
-  ! we have odd shaped blocks.
+  ! First we need to set which cumul states we are working with.
+  ! In the case of valeVale both are set to 0. In the case of coreCore both are
+  ! set to 1. In the case of coreVale, firstDim=1, secondDim=0
+  if (whichArr == 0) then
+    firstDim = 0
+    secondDim = 0
+  elseif (whichArr == 1) then
+    firstDim = 1
+    secondDim = 1
+  elseif (whichArr == 2) then
+    firstDim = 1
+    secondDim = 0
+  endif
+
+  ! Then we need to calculate the blocks along the local row and columns
+  ! so we can loop over them.
   nrBlocks = len(arrinfo%local,1)/arrinfo%mb
-  ncBlocks = len(arrinfo%local,1)/arrinfo%nb
+  ncBlocks = len(arrinfo%local,2)/arrinfo%nb
+  
+  ! If we have extra rows and columns because the blocking factor didn't divide
+  ! the dimensions of the large array equally, then we need to consider 1
+  ! more block, which is smaller than usual.
+  if (arrinfo%extraBlockRows > 0) then
+    nrBlocks = nrBlocks + 1
+  endif
+  if (arrinfo%extraBlockCols > 0) then
+    ncBlocks = ncBlocks + 1
+  endif
 
   ! Now we loop over these blocks and record the results in atomPairs
   do i=1, nrBlocks
     do j=1, ncBlocks
+      ! Need to set extra if we have an irregularly sized block that needs to
+      ! be handled. If we are at the last block and there are extra rows or 
+      ! columns we need to set extra to reflect that. Specifically for J
+      ! if we have extra columns, and extra was set to 0, then we don't have
+      ! extra rows for this block. However, if extra was already set to 1
+      ! then we have both extra rows and columns.
+      extra = 0
+      if ((i == nrBlocks) .and. (arrinfo%extraBlockRows>0)) then
+        extra = 1
+      endif
+      if ((j == ncBlocks) .and. (arrinfo%extraBlockCols>0)) then
+        if (extra == 0) then
+          extra = 2
+        elseif (extra == 1) then
+          extra = 3
+        endif
+      endif
+
       ! For localToGlobalMap we need the the starting indices of the block (a,b)
       ! This is just the array index minus 1, times the block size, plus 1
-      aVale = (i-1)*valeArrinfo%mb+1
-      bVale = (j-1)*valeArrinfo%nb+1
-      aCore = (i-1)*coreArrinfo%mb+1
-      bCore = (j-1)*coreArrinfo%nb+1
-      aVC   = (i-1)*cvArrinfo%mb+1
-      bVC   = (j-1)*cvArrinfo%nb+1
+      a = (i-1)*arrinfo%mb+1
+      b = (j-1)*arrinfo%nb+1
 
       ! Now we get the vale indices having to be searched
-      call localToGlobalMap(a,b, glo, ghi, valeArrinfo, blcsinfo)
-      ! Now we do the searches for the vale atoms
-      call getValeAtom(glo(1), vlo(1))
-      call getValeAtom(glo(2), vlo(2))
-      call getValeAtom(ghi(1), vhi(1))
-      call getValeAtom(ghi(2), vhi(2))
-      
-      ! Now we get the core indices having to be searched
-      call localToGlobalMap(a,b, glo, ghi, coreArrinfo, blcsinfo)
-      ! Now we do the searches for the core atoms
-      call getCoreAtom(glo(1), clo(1))
-      call getCoreAtom(glo(2), clo(2))
-      call getCoreAtom(ghi(1), chi(1))
-      call getCoreAtom(ghi(2), chi(2))
-
-      ! Now we get the coreVale indices having to be searched
-      call localToGlobalMap(a,b, glo, ghi, cvArrinfo, blcsinfo)
-      ! Now we do the searches for the valeCore atoms
-      call getcoreAtom(glo(1), cvlo(1))
-      call getValeAtom(glo(2), cvlo(2))
-      call getcoreAtom(ghi(1), cvhi(1))
-      call getValeAtom(ghi(2), cvhi(2))
-
-      ! Now we have to test whether or not the returned indices have any overlap
-      ! so we can avoid doing any working. This'll be done by the testAtomDupe
-      ! subroutine below.
-      call testAtomDupe(vlo,vhi,clo,chi,cvlo,cvhi, atomPairs)
-
+      call localToGlobalMap(a, b, glo, ghi, arrinfo, blcsinfo, extra)
+      ! Now we do the searches for the atoms
+      call getAtoms(glo(1), alo(1), firstDim)
+      call getAtoms(glo(2), alo(2), secondDim)
+      call getAtoms(ghi(1), ahi(1), firstDim)
+      call getAtoms(ghi(2), ahi(2), secondDim)
+     
+      ! Now we need to enumerate the atomPairs and add them to our tree and list
+      call addAtomPairRange(alo, ahi, atomPairs, atomTree)
     enddo
   enddo
-end subroutine getAtomPairs
+  
+end subroutine getArrAtomPairs
 
 ! This function checks if two rectangles overlap. Our rectangles are given by
 ! lo (upper left corner) and hi (lower right corner). There are 4 conditions we
@@ -232,16 +324,16 @@ function checkRectOverlap(lo1, hi1, lo2, hi2)
   implicit none
 
   ! Define self and passed parameters
-  integer :: checkRangeOverlap
+  logical :: checkRangeOverlap
   integer, intent(in), dimension(2) :: lo1, hi1, lo2, hi2
 
   if ( (lo1(2)=<hi2(2)) .and. (hi1(2)>=lo2(2)) .and. &
      & (-lo1(1)>=-hi2(1)) .and. (-hi1(1)<=-lo2(1)) ) then
-    return 1
+    return .true.
   endif
 
   ! else    
-  return 0
+  return .false.
 end function checkRangeOverlap
 
 ! This subroutine finds the intersection of two rectangles if they overlap.
@@ -281,45 +373,87 @@ function inRectangle(i,j, loOvlp, hiOvlp)
   return 0
 end function inRectangle
 
+! This subroutine enumerates a range of atoms and calls addAtomPair to add
+! a range of atomPairs to a list
+subroutine  addAtomPairRange(alo, ahi, atomPairs, atomTree)
+  implicit none
+
+  ! Define passed parameters
+  integer, intent(in), dimension(2) :: alo
+  integer, intent(in), dimension(2) :: ahi
+  type(AtomPair), pointer :: atomPairs
+  type(bst_node), pointer :: atomTree
+
+  ! Define local variables
+  integer :: i,j  ! loop vars
+
+
+  do i=alo(1),ahi(1)
+    do j=alo(2),ahi(2)
+      addAtomPair(i,j, atomPairs, atomTree)
+    enddo
+  enddo
+end subroutine  addAtomPairRange
+
 ! This subroutine appends an atom pair to the list of atomPairs
-subroutine addAtomPair(i,j, atomPairs)
+subroutine addAtomPair(i, j, atomPairs, atomTree)
   implicit none
 
   ! Define passed parameters
   integer, intent(in) :: i,j
-  type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairs
+  type(AtomPair), pointer:: atomPairs
+  type(bst_node), pointer :: atomTree
 
   ! Define local variables
-  type(AtomPair), allocatable, dimension(:) :: tmpPairs
-  integer :: newsize
+  logical :: exists
+  integer :: cantorVal
+  type(AtomPair), pointer :: newPair
+  type(AtomPair), pointer :: lastPair
 
-  newsize = size(atomPairs,1)+1
-  ! Allocate some initial space in tmpPairs
+  call modifiedCantor(i,j,cantorVal)
 
-  allocate(tmpPairs(newSize))
+  call tree_search(atomTree, cantorVal, exists)
+  ! If the value is already in the tree, return without doing anything
+  if (exists) then
+    return
+  endif
 
-  tmpPairs = atomPairs
-  tmpPairs(size(tmpPairs,1))%I = i
-  tmpPairs(size(tmpPairs,1))%J = j
+  ! If the value is not in the tree, then we first need to add it to the tree
+  call tree_insert(atomTree, cantorVal)
 
-  deallocate(atomPairs)
-  allocate(atomPairs(newSize))
-  atomPairs = tmpPairs
+  ! Now we need to check and see if this is our first atomPair in the linked
+  ! list.
+  if ( (atomPairs%I == -1) .and. (atomPairs%J == -1) ) then
+    atomPairs%I = i
+    atomPairs%J = j
+  else 
+    ! If we are not the first pair in the list, we need to initialize a new one
+    call initAtomPair(newPair)
+    newPair%I = i
+    newPair%J = i
 
-  deallocate(tmpPairs)
+    ! Now we need to go to the end of the linked list
+    lastPair => atomPairs
+    do while ( associated(lastPair%next) )
+      lastPair => lastPair%next
+    enddo
 
-end subroutine addAtomPairs
+    ! Point the last pair's pointer to the newPair 
+    lastPair%next => newPair
+  endif
+
+end subroutine addAtomPair
 
 ! This subroutine is responsible for checking the ranges of atoms that need
 ! to be calculated in order to fill the local matrices, to make sure that no
 ! extra work will be done. It'll then copy the atomPairs structure into a 
 ! temporary structure, so it can reallocate the atomPairs and add the necessary
 ! atom ranges.
-subroutine testAtomDupe(vlo, vhi, clo, chi, cvlo, cvhi, atomPairs)
+subroutine testAtomDupe(vlo,vhi,clo,chi,cvlo,cvhi, atomPairs)
   implicit none
 
   ! Define passed parameters
-  integer, intent(in), dimension(2) :: vlo, vhi, clo, chi, cvlo, cvhi
+  integer, intent(in), dimension(2) :: alo, ahi
   type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairs
 
   ! Define local variables
@@ -333,8 +467,8 @@ subroutine testAtomDupe(vlo, vhi, clo, chi, cvlo, cvhi, atomPairs)
   hiOvlp2(:) = 0
 
   ! First add all vale atom pairs
-  do i=vlo(1), vlo(2)
-    do j=vhi(1), vhi(2)
+  do i=vlo(1), vhi(1)
+    do j=vlo(2), vhi(2)
       addAtomPairs(i,j, atomPairs)
     enddo
   enddo
@@ -342,7 +476,6 @@ subroutine testAtomDupe(vlo, vhi, clo, chi, cvlo, cvhi, atomPairs)
   ! Check if vale and core overlap
   if ( checkRectOverlap(vlo, vhi, clo, chi) ) then
     call getOverlapRect(vlo, vhi, clo, chi, loOvlp1, hiOvlp1)
-    ! Add appropriate ones to atom pairs
   endif 
 
   ! Now add the core pairs
@@ -361,20 +494,18 @@ subroutine testAtomDupe(vlo, vhi, clo, chi, cvlo, cvhi, atomPairs)
   ! Check if vale and coreVale overlap
   if ( checkRectOverlap(vlo, vhi, cvlo, cvhi) ) then
     call getOverlapRect(vlo, vhi, cvlo, cvhi, loOvlp1, hiOvlp1)
-    ! Add appropriate ones to atom pairs
   endif
 
   ! Check of core and coreVale overlap
   if ( checkRectOverlap(clo, chi, cvlo, cvhi) ) then
-    call getOverlapRect(clo, chi, cvlo, cvhi, loSect, hiSect)
-    ! Add appropriate ones to atom pairs
+    call getOverlapRect(clo, chi, cvlo, cvhi, loOvlp2, hiOvlp2)
   endif
   
   ! Now we add the valeCore pairs
   do i=vclo(1), vclo(2)
     do j=vchi(1), vchi(2)
-      if ( (.not. inRectangle(i,j, loOvlp1, hiOvlp1)) .and.
-           (.not. inRectangle(i,j, loOvlp2, hiOvlp2)) )then
+      if ( .not. (inRectangle(i,j, loOvlp1, hiOvlp1) .or.
+           inRectangle(i,j, loOvlp2, hiOvlp2)) )then
         addAtomPairs(i,j, atomPairs)
       endif
     enddo
@@ -383,58 +514,46 @@ subroutine testAtomDupe(vlo, vhi, clo, chi, cvlo, cvhi, atomPairs)
 
 end subroutine testAtomDupe
 
-! Given an index gIndx=(1,valeDim), along a dimension gArrayDim=(1,2),
-! return the atom indx needed so that the local array can be filled.
-!
-! Future improvement, write out the conditions necessary so that getValeAtom
-! can be combined with getCoreAtom in the same loop. Currently I just want
-! things to work. Additionally evaluate the necessity of a binary search over
-! a linear one.
-subroutine getValeAtom(gIndx, valeIndx)
+! Given an index gIndx from 1 to valedim/coredim. Return the atom indx needed
+! so that the local array can be filled. whichCumul indicates whether we 
+! should search through vale or core states.
+subroutine getAtoms(gIndx, atomIndx, whichCumul)
 
   use O_AtomicSites, only: atomSites
 
   implicit none
 
   ! Define Passed Parameters
-  integer, dimension(2), intent(in) :: gIndx ! Global Area of interest
-  integer, intent(out) :: valeIndx ! What we're looking for
+  integer, intent(in) :: gIndx ! Global Area of interest
+  integer, intent(out) :: atomIndx ! What we're looking for
+  integer :: whichCumul ! Which cumul states we should look for 0=vale, 1=core
 
-  if ( gIndx <= atomSites(1)%cumulValeStates ) then
-    valeIndx == 1
-  else
-    do i=1, len(atomSites)-1
-      if (gIndx >= atomSites(i)%cumulValeStates .and. &
-            gIndx < atomSites(i+1)%cumulValeStates) then
-        valeindx = i 
-      endif
-    enddo
+  if (whichCumul == 0) then
+    if ( gIndx <= atomSites(1)%cumulValeStates ) then
+      atomIndx == 1
+    else
+      do i=1, len(atomSites)-1
+        if (gIndx >= atomSites(i)%cumulValeStates .and. &
+              & gIndx < atomSites(i+1)%cumulValeStates) then
+          atomIndx = i 
+        endif
+      enddo
+    endif
+
+  else ! whichCumul = 1
+    if ( gIndx <= atomSites(1)%cumulCoreStates ) then
+      atomIndx == 1
+    else
+      do i=1, len(atomSites)-1
+        if (gIndx >= atomSites(i)%cumulCoreStates .and. &
+              & gIndx < atomSites(i+1)%cumulCoreStates) then
+          atomIndx = i 
+        endif
+      enddo
+    endif
   endif
-end subroutine getValeAtom
+end subroutine getAtoms
 
-! Given an index gIndx=(1,coreDim), along a dimension gArrayDim=(1,2),
-! return the atom indx needed so that the local array can be filled.
-subroutine getCoreAtom(gIndx, coreIndx)
-
-  use O_AtomicSites, only: atomSites
-
-  implicit none
-
-  ! Define Passed Parameters
-  integer, dimension(2), intent(in) :: gIndx ! Global Area of interest
-  integer, intent(out) :: coreIndx
-
-  if ( gIndx <= atomSites(1)%cumulCoreStates ) then
-    coreIndx == 1
-  else
-    do i=1, len(atomSites)-1
-      if (gIndx >= atomSites(i)%cumulCoreStates .and. &
-            gIndx < atomSites(i+1)%cumulCoreStates) then
-        coreIndx = i 
-      endif
-    enddo
-  endif
-end subroutine getCoreAtom
 
 ! Purpose: This subroutine undoes some of the load balancing that is done
 ! previously. It would be extremely easy to combine this with the two other

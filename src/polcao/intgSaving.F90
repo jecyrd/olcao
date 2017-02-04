@@ -162,9 +162,8 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
 end subroutine kPointLatticeOriginShift
 
 
-subroutine saveCurrentPair (i,j,kPointCount,currentPair,descriptVV,descriptCC,&
-      & descriptCV,descriptVC,localVV,localCC,localCV,localVC,&
-      & currentNumTotalStates)
+subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsInfo, vvInfo, &
+    & ccInfo, cvInfo)
 
    ! Import the necessary modules
    use O_Kinds
@@ -182,15 +181,8 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,descriptVV,descriptCC,&
    integer, intent(in) :: kPointCount
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
          & numKPoints), intent(inout) :: currentPair
-   integer, dimension(9), intent(in) :: descriptVV
-   integer, dimension(9), intent(in) :: descriptCC
-   integer, dimension(9), intent(in) :: descriptCV
-   integer, dimension(9), intent(in) :: descriptVC
-   complex (kind=double), dimension (:,:,:), intent(inout) :: localVV
-   complex (kind=double), dimension (:,:,:), intent(inout) :: localCC
-   complex (kind=double), dimension (:,:,:), intent(inout) :: localCV
-   complex (kind=double), dimension (:,:,:), intent(inout) :: localVC
-   integer, intent(in), dimension(2) :: currentNumTotalStates
+   type(BlacsInfo), intent(in) :: blcsInfo
+   type(ArrayInfo), intent(inout) :: vvInfo, ccInfo, cvInfo
 
    ! Define the matrix necessary for quickly accessing the complex conjugate
    !   of the currentPair.
@@ -207,6 +199,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,descriptVV,descriptCC,&
 
    ! Other local variables
    integer, dimension (2) :: currentAtomType
+   integer, dimension (2) :: hiStateIndex, loStateIndex
 
    ! Assign the current atom types
    currentAtomType(1) = atomSites(i)%atomTypeAssn
@@ -220,6 +213,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,descriptVV,descriptCC,&
             & transpose(conjg(currentPair(:,:,kPointCounter)))
    enddo
 
+
    ! Get the indices for where the states for these atoms should begin to
    !   be recorded in the core containing matrices.  Also get the number
    !   of states that these atoms occupy.
@@ -228,10 +222,13 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,descriptVV,descriptCC,&
    valeStateNum(1)   = atomTypes(currentAtomType(1))%numValeStates
    valeStateNum(2)   = atomTypes(currentAtomType(2))%numValeStates
 
-   ! Save the valence valence part.  The upper triangle contains the real
-   !   part while the strict lower triangle contains the imaginary part.
-   call valeValeSaving (i,j,kPointCount,valeStateIndex,valeStateNum,&
-         & currentPair,currentPairDagger,descriptVV,localVV)
+   loStateIndex(1) = valeStateIndex(1)
+   loStateIndex(2) = valeStateIndex(2)
+   hiStateIndex(1) = valeStateIndex(1)+valeStateNum(1)
+   hiStateIndex(2) = valeStateIndex(2)+valeStateNum(2)
+   ! Now call atomAtomSaving for the valeVale array
+   call atomAtomSaving(loStateIndex, hiStateIndex, currentPair, &
+     & currentPairDagger, vvInfo)
 
    ! If there is no core contribution then we don't have to save any
    !   core parts.
@@ -245,11 +242,17 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,descriptVV,descriptCC,&
    coreStateNum(1)   = atomTypes(currentAtomType(1))%numCoreStates
    coreStateNum(2)   = atomTypes(currentAtomType(2))%numCoreStates
 
+   loStateIndex(1) = coreStateIndex(1)
+   loStateIndex(2) = valeStateIndex(2)
+   hiStateIndex(1) = coreStateIndex(1)+coreStateNum(1)
+   hiStateIndex(2) = valeStateIndex(2)+valeStateNum(2)
    ! Save the overlap from the core of atom 1 with the valence of atom 2.
    !   This code is basically a replication of the old code.
-   call coreValeSaving (kPointCount,valeStateIndex,valeStateNum,&
-         & coreStateIndex,coreStateNum,currentPair,currentPairDagger,&
-         & descriptCV,descriptVC,localCV,localVC)
+   !call coreValeSaving (kPointCount,valeStateIndex,valeStateNum,&
+   !      & coreStateIndex,coreStateNum,currentPair,currentPairDagger,&
+   !      & descriptCV,descriptVC,localCV,localVC)
+   call atomAtomSaving(loStateIndex, hiStateIndex, currentPair, &
+     & currentPairDagger, cvInfo)
 
    ! Now we do the Core Core part just the same as we did for the Vale
    !   Vale part.  The only difference is the shift of valeStateNum(:)
@@ -257,8 +260,14 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,descriptVV,descriptCC,&
 
    if ((coreStateNum(1) == 0) .or. (coreStateNum(2) == 0)) return
 
-   call coreCoreSaving (i,j,kPointCount,valeStateNum,coreStateIndex,&
-         & coreStateNum,currentPair,currentPairDagger,descriptCC,localCC)
+   loStateIndex(1) = coreStateIndex(1)
+   loStateIndex(2) = coreStateIndex(2)
+   hiStateIndex(1) = coreStateIndex(1)+coreStateNum(1)
+   hiStateIndex(2) = coreStateIndex(2)+coreStateNum(2)
+   !call coreCoreSaving (i,j,kPointCount,valeStateNum,coreStateIndex,&
+   !      & coreStateNum,currentPair,currentPairDagger,descriptCC,localCC)
+   call atomAtomSaving(loStateIndex, hiStateIndex, currentPair, &
+     & currentPairDagger, ccInfo)
 
    ! Deallocate the dagger of the current pair since it is no longer needed.
    deallocate (currentPairDagger)
@@ -266,9 +275,141 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,descriptVV,descriptCC,&
 end subroutine saveCurrentPair
 
 
+! Because the blocking and atom pairs don't have a strong relationship to
+! each other we are going to use the following procedure to make sure
+! everything gets saved in the right place.
+!  -Loop over blocks
+!  -Calculate the global indices for a block 
+!  -Check if that block has overlap with the currentPair global indices
+!  -If there is an overlap, Calculate the overlapping bounds
+!  -Calculate the local array indices from the global overlap indices.
+!  -Save the overlapping elements into the local array
+subroutine atomAtomSaving (loStateIndex, hiStateIndex, currentPair, &
+    & currentPairDagger, arrInfo, blcsInfo)
 
-subroutine valeValeSaving (atom1,atom2,kPointCount,valeStateIndex,valeStateNum,&
-      & currentPair,currentPairDagger,descriptVV,localVV)
+   ! Import the necessary modules
+   use O_Kinds
+
+   ! Import the necessary data modules.
+   use O_KPoints, only: numKPoints
+   use O_AtomicTypes, only: maxNumStates
+
+   ! Make sure that there are not accidental variable declarations.
+   implicit none
+
+   ! Define variables passed to this subroutine
+   integer, dimension (2), intent(in) :: loStateIndex, hiStateIndex
+   complex (kind=double), dimension (maxNumStates,maxNumStates,&
+         & numKPoints), intent(in) :: currentPair
+   type(ArrayInfo), intent(inout) :: arrInfo
+   type(BlacsInfo), intent(in) :: blcsInfo
+
+   ! Define local variables
+   integer :: nrBlocks, ncBlocks ! Number of blocks along row and columns
+   integer :: row, col ! Loop variables
+   integer :: a, b     ! Block local indices
+   integer, dimension(2) :: lblock, hblock ! Block global indices
+   integer, dimension(2) :: hiStateIndex ! Current pair global indices
+                                         ! corresponding to the bottom right
+                                         ! corner of the pair
+   integer, dimension(2) :: loOverlap, hiOverlap ! If currentPair overlaps
+                                                 ! with a block, the indices
+                                                 ! corresponding to overlap
+                                                 ! will be stored here
+   integer, dimension(2) :: locallo, localhi ! These store the loOverlap, and
+                                             ! hiOverlap indices after being
+                                             ! mapped to the local array
+   integer :: extra ! Variable to denote irregular size in one dimension
+                    ! see localToGlobalMap in O_Parallel for description
+
+   ! First get the number of blocks in our local vale array
+   nrBlocks = len(arrInfo%local,1)/arrInfo%mb
+   nrBlocks = len(arrInfo%local,2)/arrInfo%nb
+
+   ! If we have extra rows and columns because the blocking factor didn't divide
+   ! the dimensions of the global array equally, then we need to consider 1
+   ! more block, which is smaller than usual.
+   if (arrInfo%extraBlockRows > 0) then
+     nrBlocks = nrBlocks + 1
+   endif
+   if (arrInfo%extraBlockCols > 0) then
+     ncBlocks = ncBlocks + 1
+   endif
+   
+   do row=1,nrBlocks
+      do col=1,ncBlocks
+         ! Need to set extra if we have an irregularly size block that needs to
+         ! be handled. If we are at the last block and there are extra rows or
+         ! columns, we need to set extra to reflect that. Specifically for J
+         ! if we have extra columns, and extra was set to 0, then we don't
+         ! have extra rows for this block. However, if extra was already set to
+         ! 1 then we have both extra rows and columns.
+         extra = 0
+         if ((row == nrBlocks) .and. (arrInfo%extraBlockRows>0)) then
+           extra = 1
+         endif
+         if ((col == ncBlocks) .and. (arrInfo%extraBlockCols>0)) then
+           if (extra == 0) then
+             extra = 2
+           elseif (extra == 1) then
+             extra = 3
+           endif
+         endif
+
+         ! Now we calculate our block's local starting indices
+         a = row * arrInfo%mb
+         b = col * arrInfo%nb
+
+         ! Now localToGlobalMap sets our blocks global indices and stores in
+         ! lblock and hblock
+         call localToGlobalMap(a, b, lblock, hblock, arrInfo, blcsInfo, extra)
+
+         ! Now we need to check if this block's global indices, overlap with the
+         ! currentPair's indices
+         if (checkRectOverlap(lblock, hblock, loStateIndex,hiStateIndex)) then
+
+            ! If there is an overlap, we need to know what the overlap is
+            ! getOverlapRect will set loSect, hiSect to the bounds of the
+            ! overlap.
+            call getOverlapRect(lblock, hblock, loStateIndex, &
+              & hiStateIndex, loOverlap, hiOverlap)
+
+            ! Now that we have the global indices of the overlap in loOverlap
+            ! and hiOverlap, we need to map these to the local array indices
+            call globalToLocalMap(loOverlap, hiOverlap, locallo, &
+              & localhi, arrInfo, blcsInfo, extra)
+            
+            ! Save the valence valence part.  The upper triangle contains the
+            ! real part while the strict lower triangle contains the imaginary 
+            ! part. We need to check if the calculated global indices were on
+            ! the lower half o fthe triangle or the upper half. This determines
+            ! whether we call this subroutine with currentPair or
+            ! currentPairDagger
+            if (loOverlap(2) >= hiOverlap(1)) then ! if j>i upper half
+              ! We are on the top half of the global
+              !call valeValeSaving (i,j,kPointCount, locallo, localhi, &
+              !  & loOverlap, hiOverlap, currentPair, arrInfo, blcsInfo)
+              arrInfo%local(locallo(1):localhi(1), locallo(2):localhi(2), :) = &
+                & currentPair(globallo(1):globalhi(1), &
+                & globallo(2):globalhi(2), :)
+              atomAtomSaving(locallo, localhi, globallo, globalhi, &
+                & currentPair, arrInfo)
+            else
+              ! We are on the bottom half of the global
+              !call valeValeSaving (i,j,kPointCount, locallo, localhi, &
+              !  & loOverlap, hiOverlap, currentPair, arrInfo, blcsInfo)
+              arrInfo%local(locallo(1):localhi(1), locallo(2):localhi(2), :) = &
+                & currentPairDagger(globallo(1):globalhi(1), &
+                & globallo(2):globalhi(2), :)
+            endif
+         endif
+      enddo
+   enddo
+end subroutine atomAtomSaving
+
+
+subroutine valeValeSaving (atom1,atom2,kPointCount,locallo, localhi, globallo, &
+      & globalhi, currentPair,currentPairDagger, vvInfo)
 
    ! Import the necessary modules
    use O_Kinds
@@ -285,61 +426,56 @@ subroutine valeValeSaving (atom1,atom2,kPointCount,valeStateIndex,valeStateNum,&
    integer, intent(in) :: atom1
    integer, intent(in) :: atom2
    integer, intent(in) :: kPointCount
-   integer, dimension (2), intent(in) :: valeStateIndex
-   integer, dimension (2), intent(in) :: valeStateNum
-   complex (kind=double), dimension (valeDim,valeDim,numKPoints) :: valeVale
+   integer, dimension (2), intent(in) :: locallo, localhi
+   integer, dimension (2), intent(in) :: globallo, globalhi
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
          & numKPoints), intent(in) :: currentPair
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
          & numKPoints), intent(in) :: currentPairDagger
-   integer, dimension(9), intent(in) :: descriptVV
+   type(ArrayInfo), intent(inout) :: vvInfo
    complex (kind=double), dimension (:,:,:), intent(inout) :: localVV
 
    ! Define local variables for loop control and tracking.
-   integer :: i,j,k
-   integer, dimension(2) :: startIndices
-   integer, dimension(2) :: endIndices
-   integer, dimension(2) :: dagStart
-   integer, dimension(2) :: dagEnd
-   integer, dimension(2) :: ldReal
-   integer, dimension(2) :: ldCmplx
+!   integer :: i,j,k
 
-   startIndices(1) = valeStateIndex(1)+1
-   startIndices(2) = valeStateIndex(2)+1
-   endIndices(1) = valeStateIndex(1)+valeStateNum(1)
-   endIndices(2) = valeStateIndex(2)+valeStateNum(2)
-   dagStart(1) = startIndices(2)
-   dagStart(2) = startIndices(1)
-   dagEnd(1) = endIndices(2)
-   dagEnd(2) = endIndices(1)
-   ldReal(1) = valeStateNum(1)
-   ldReal(2) = valeStateNum(2)
-   ldCmplx(1) = valeStateNum(2)
-   ldCmplx(2) = valeStateNum(1)
+   ! These are the indices inside the global array
+!   startIndices(1) = valeStateIndex(1)+1
+!   startIndices(2) = valeStateIndex(2)+1
+!   endIndices(1) = valeStateIndex(1)+valeStateNum(1)
+!   endIndices(2) = valeStateIndex(2)+valeStateNum(2)
 
-   if (atom1 == atom2) then
-      do i = 1, kPointCount
-          ! Plop the full matrix on the diagonal
-          call ga_put(ga_vv(i), startIndices(1),endIndices(1),&
-                & startIndices(2), endIndices(2), &
-                & currentPair(1:valeStateNum(1),1:valeStateNum(2),i),&
-                & ldReal(1))
-      enddo
-   else
-      do i = 1, kPointCount
-         ! First save to top half
-         call ga_put(ga_vv(i),startIndices(1),endIndices(1), &
-               & startIndices(2),endIndices(2), &
-               & currentPair(1:valeStateNum(1),1:valeStateNum(2),i),&
-               & ldReal(1))
+!   ! We then want to calculate the global indices of the local array
+!   call localToGlobalMap(a, b, glo, ghi, valeArrInfo, blcsinfo)
+!
+!   ! Then we want to get the rectangular overlap of the global array pair, and
+!   ! the global indices of the local array.
+!   getOverlapRect( )
 
-         ! Put the dagger into the lower half
-         call ga_put(ga_vv(i),dagStart(1),dagEnd(1), &
-               & dagStart(2),dagEnd(2), &
-               & currentPairDagger(1:valeStateNum(2),1:valeStatenum(1),i),&
-               & ldCmplx(1))
-      enddo
-   endif
+   vvInfo%local(locallo(1):localhi(1), locallo(2):localhi(2), :) = &
+     & currentPair(globallo(1):globalhi(1), globallo(2):globalhi(2), :)
+   !if (atom1 == atom2) then
+   !   do i = 1, kPointCount
+   !       ! Plop the full matrix on the diagonal
+   !       call ga_put(ga_vv(i), startIndices(1),endIndices(1),&
+   !             & startIndices(2), endIndices(2), &
+   !             & currentPair(1:valeStateNum(1),1:valeStateNum(2),i),&
+   !             & ldReal(1))
+   !   enddo
+   !else
+   !   do i = 1, kPointCount
+   !      ! First save to top half
+   !      call ga_put(ga_vv(i),startIndices(1),endIndices(1), &
+   !            & startIndices(2),endIndices(2), &
+   !            & currentPair(1:valeStateNum(1),1:valeStateNum(2),i),&
+   !            & ldReal(1))
+
+   !      ! Put the dagger into the lower half
+   !      call ga_put(ga_vv(i),dagStart(1),dagEnd(1), &
+   !            & dagStart(2),dagEnd(2), &
+   !            & currentPairDagger(1:valeStateNum(2),1:valeStateNum(1),i),&
+   !            & ldCmplx(1))
+   !   enddo
+   !endif
 
 end subroutine valeValeSaving
 

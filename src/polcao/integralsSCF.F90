@@ -52,6 +52,7 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
+   logical :: doLoop ! Contol variable for atom-atom loop
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -114,7 +115,8 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
    type(ArrayInfo) :: ccArrayInfo
 
    ! Define structure to hold atomPairs in
-   type(AtomPair), allocatable, dimension(:) :: atomPairs
+   type(AtomPair), pointer :: atomPairs
+   type(AtomPair), pointer :: currAtomPair
 
    ! Define variables for gauss integrals
    integer :: l1l2Switch
@@ -137,15 +139,31 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
    allocate (currentPairGamma    (maxNumStates,maxNumStates))
 #endif
    
-   call setuparrayDesc(vvArrayInfo, BlcsInfo, valeDim, valeDim, numKPoints)
-   call setuparrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
- 
-   call getAtomPairs(vvArrayInfo, ccArrInfo, cvArrInfo, blcsinfo, atomPairs)
+   call setupArrayDesc(vvArrayInfo, BlcsInfo, valeDim, valeDim, numKPoints)
+   call setupArrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
+
+   ! We need to allocate our first atomPair element
+   call initAtomPair(atomPairs)
+
+   ! Now we can go about figuring out what atom pairs we need to do
+   call getAtomPairs(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, atomPairs)
+
+   currAtomPair => atomPairs
+   
+   doLoop = .true.
 
    ! Begin atom-atom overlap loops.
-   do atomLoop = 1, size(atomPairs,1)
-      i = atomPairs(atomLoop)%I
-      j = atomPairs(atomLoop)%J
+   do while ( doLoop ) ! atomLoop = 1, size(atomPairs,1)
+      i = currAtomPair%I
+      j = currAtomPair%J
+
+      ! This might make more sense to do at the end of the loop. But it works
+      ! just fine here too
+      if (associated(currAtomPari%next)) then
+        currAtomPair => currAtomPair%next
+      else
+        doLoop = .false.
+      endif
 
       ! Get the actual atom numbers of the atoms in this atomLoop pair.
       call findUnpackedIndices(atomLoop,i,j)
@@ -388,9 +406,8 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
       ! First we must make a correction for the atom 2 lattice origin shift.
       call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
             & latticeVector,numKPoints,0)
-      call saveCurrentPair(i,j,numKPoints,currentPair,descriptVV,descriptCC,&
-            & descriptCV_OL,descriptVC_OL,localVV,localCC,localCV_OL,&
-            & localVC_OL,currentNumTotalStates)
+      call saveCurrentPair(i,j,numKPoints,currentPair,blcsInfo, vvInfo,&
+            & ccInfo, cvInfo)
 #else
       call saveCurrentPairGamma(i,j,currentPairGamma,descriptVV,descriptCC,&
             & descriptCV_OL,descriptVC_OL,localVV,localCC,localCV_OL,&
@@ -416,6 +433,9 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
    ! Perform orthogonalization and save the results to disk.
    call orthoOL(descriptCC,descriptVV,descriptCV_OL,descriptVC_OL,localCC,&
          & localVV,localCV_OL,localVC_OL,1)
+
+   ! Deallocate the atomPair list
+   call destroyAtomList(atomPairs)
 
    ! Deallocate the local matrices for the overlap. Note that we need to keep
    !   the localCV_OL and localVC_OL for the orthogonalization of the other
@@ -2245,8 +2265,8 @@ subroutine orthoOL(descriptCC,descriptVV,descriptCV_OL,descriptVC_OL,localCC,&
          ! Subtract 2 * the product of (coreValeOL**H)(coreValeOL) from the
          !   valeVale matrix. See documentation in intgOrtho.F90 for details.
          call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call valeCoreCoreValeOL (valeDim,coreDim,descriptCV_OL,descriptVV,&
-               & localCV_OL(:,:,i),localVV(:,:,i))
+         call valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo)
+
 
          ! Form product of (valeCoreOL)(coreCore) and store into the temp
          !   matrix (valeCore_temp).

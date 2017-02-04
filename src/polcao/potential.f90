@@ -227,11 +227,11 @@ subroutine initPotCoeffs
    endif
 
    ! Get everyone together
-   MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+   call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
 
    ! Broadcast the potential coefficients to the other processes.
    do i = 1, spin
-      MPI_BCAST(potCoeffs(:,i),potDim,MPI_DOUBLE_PRECISION,0,&
+      call MPI_BCAST(potCoeffs(:,i),potDim,MPI_DOUBLE_PRECISION,0,&
             & MPI_COMM_WORLD,mpiErr)
    enddo
 

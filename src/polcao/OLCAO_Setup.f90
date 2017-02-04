@@ -136,7 +136,7 @@ subroutine setupSCF
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapOL(cvOLArrayInfo, BlcsInfo)
+   call gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
    call MPI_Barrier(mpierr)
 
    ! Calculate the matrix elements of the kinetic energy between all LCAO Bloch

@@ -214,8 +214,7 @@ module O_Orthogonalization
 
 #ifndef GAMMA
 
-subroutine valeCoreCoreValeOL (valeDim,coreDim,descriptCV_OL,descriptVV,&
-      & localCV_OL,localVV)
+subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo)
 
    ! Import the necessary modules
    use O_Kinds
@@ -228,10 +227,8 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,descriptCV_OL,descriptVV,&
    ! Define passed parameters
    integer, intent(in) :: valeDim ! N
    integer, intent(in) :: coreDim ! K
-   integer, dimension(9), intent(in) :: descriptCV_OL ! DESCA
-   integer, dimension(9), intent(in) :: descriptVV ! DESCC
-   complex (kind=double), dimension (:,:), intent(inout) :: localCV_OL ! A
-   complex (kind=double), dimension (:,:), intent(inout) :: localVV ! C
+   type(ArrayInfo), intent(inout) :: vvInfo
+   type(ArrayInfo), intent(inout) :: cvOLInfo
 
    ! Do a rank 1 update. That is: C := alpha*A**H*A + beta*C where H equals
    !   complex conjugate and transpose. Also, alpha = -2 and beta = 1. The
@@ -246,8 +243,8 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,descriptCV_OL,descriptVV,&
    !   character could be anything. But, be careful anyway. The documentation
    !   from IBM seems better: Search for Parallel ESSL.
    call pzherk('U','C',valeDim,coreDim,(-2.0_double,0.0_double),&
-         & localCV_OL,0,0,descriptCV_OL,(1.0_double,0.0_double),localVV,0,0,&
-         & descriptVV)
+         & cvOLInfo%local, 0, 0, cvOLInfo%desc, (1.0_double,0.0_double), &
+         & vvInfo%local, 0,0, vvInfo%desc)
 
    ! For reference, the non-parallel approach would look like the following
    !   with (first) blas and (second) straight matmul:
@@ -260,8 +257,7 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,descriptCV_OL,descriptVV,&
 
 end subroutine valeCoreCoreValeOL
 
-subroutine valeCoreCoreVale (valeDim,coreDim,descriptCV_OL,descriptCV,&
-      & descriptVV,localCV_OL,localCV,localVV)
+subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo)
 
    ! Import the necessary modules
    use O_Kinds
@@ -274,16 +270,13 @@ subroutine valeCoreCoreVale (valeDim,coreDim,descriptCV_OL,descriptCV,&
    ! Define passed parameters
    integer, intent(in) :: valeDim ! N
    integer, intent(in) :: coreDim ! K
-   integer, dimension(9), intent(in) :: descriptCV_OL ! DESCA
-   integer, dimension(9), intent(in) :: descriptCV ! DESCB
-   integer, dimension(9), intent(in) :: descriptVV ! DESCC
-   complex (kind=double), dimension (:,:), intent(inout) :: localCV_OL ! A
-   complex (kind=double), dimension (:,:), intent(inout) :: localCV ! B
-   complex (kind=double), dimension (:,:), intent(inout) :: localVV ! C
+   type(ArrayInfo), intent(inout) :: vvInfo
+   type(ArrayInfo), intent(inout) :: cvInfo
+   type(ArrayInfo), intent(inout) :: cvOLInfo
 
    call pzher2k('U','C',valeDim,coreDim,(-1.0_double,0.0_double),&
-         & localCV_OL,0,0,descriptCV_OL,localCV,0,0,descriptCV,&
-         & (1.0_double,0.0_double),localVV,0,0,descriptVV)
+         & cvOLInfo%local,0,0,cvOLInfo%desc,cvInfo%local,0,0,cvInfo%desc,&
+         & (1.0_double,0.0_double),vvInfo%local,0,0,vvInfo%desc)
 
    ! For reference, the non-parallel approach would look like the following
    !   with (first) blas and (second) straight matmul:
@@ -296,8 +289,7 @@ subroutine valeCoreCoreVale (valeDim,coreDim,descriptCV_OL,descriptCV,&
 
 end subroutine valeCoreCoreVale
 
-subroutine valeCoreCoreCore (valeDim,coreDim,descriptVC,descriptCC,&
-      & descriptVC_temp,localVC,localCC,localVC_temp)
+subroutine valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo)
 
    ! Import the necessary modules
    use O_Kinds
@@ -310,26 +302,22 @@ subroutine valeCoreCoreCore (valeDim,coreDim,descriptVC,descriptCC,&
    ! Define passed parameters
    integer, intent(in) :: valeDim ! M
    integer, intent(in) :: coreDim ! N
-   integer, dimension(9), intent(in) :: descriptVC ! DESCB
-   integer, dimension(9), intent(in) :: descriptCC ! DESCA (Hermitian)
-   integer, dimension(9), intent(in) :: descriptVC_temp ! DESCC (Resultant)
-   complex (kind=double), dimension (:,:), intent(inout) :: localVC ! B
-   complex (kind=double), dimension (:,:), intent(inout) :: localCC ! A (Herm)
-   complex (kind=double), dimension (:,:), intent(inout) :: localVC_temp ! C
+   type(ArrayInfo), intent(inout) :: vcInfo
+   type(ArrayInfo), intent(inout) :: ccInfo
+   type(ArrayInfo), intent(inout) :: vcTempInfo
 
    ! Note that localVC_temp is the resultant matrix.
 
    call pzhemm ('R','U',valeDim,coreDim,(1.0_double,0.0_double),&
-         & localCC,0,0,descriptCC,localVC,0,0,descriptVC,&
-         & (0.0_double,0.0_double),localVC_temp,0,0,descriptVC_temp)
+         & ccInfo%local,0,0,ccInfo%desc,vcInfo%local,0,0,vcInfo%desc,&
+         & (0.0_double,0.0_double),vcTempInfo%local,0,0,vcTempInfo%desc)
 
 end subroutine valeCoreCoreCore
 
 ! This subroutine will execute a VC*CV matrix multiplication and store the
 !   result in VV. (This should be Hermitian. This subroutine will also set
 !   numbers less that 1e-10 to zero to improve compressed storage.
-subroutine makeValeVale (valeDim,coreDim,descriptVC_temp,decriptCV,descriptVV,&
-      & localVC_temp,localCV,localVV)
+subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo)
 
    ! Import the necessary modules
    use O_Kinds
@@ -342,12 +330,9 @@ subroutine makeValeVale (valeDim,coreDim,descriptVC_temp,decriptCV,descriptVV,&
    ! Define passed parameters
    integer, intent(in) :: valeDim
    integer, intent(in) :: coreDim
-   integer, dimension(9), intent(in) :: descriptVC_temp ! DESCA
-   integer, dimension(9), intent(in) :: descriptCV ! DESCB
-   integer, dimension(9), intent(in) :: descriptVV ! DESCC (Resultant,Hermitian)
-   complex (kind=double), dimension (:,:), intent(inout) :: localVC_temp ! A
-   complex (kind=double), dimension (:,:), intent(inout) :: localCV ! B
-   complex (kind=double), dimension (:,:), intent(inout) :: localVV ! C (Herm)
+   type(ArrayInfo), intent(inout) :: vcTempInfo
+   type(ArrayInfo), intent(inout) :: cvInfo
+   type(ArrayInfo), intent(inout) :: vvInfo
 
    ! Define loop control variables
    integer :: i,j
@@ -359,22 +344,25 @@ subroutine makeValeVale (valeDim,coreDim,descriptVC_temp,decriptCV,descriptVV,&
    negligLimit = real(1.0D-10,double)
 
    call pzgemm ('N','N',valeDim,valeDim,coreDim,(1.0_double,0.0_double),&
-         & localVC_temp,0,0,descriptVC_temp,localCV,0,0,descriptCV,&
-         & (1.0_double,0.0_double),localVV,0,0,descriptVV)
+         & vcTempInfo%local,0,0,vcTempInfo%desc, &
+         & cvInfo%local,0,0,cvInfo%desc, (1.0_double,0.0_double), &
+         & vvInfo%local,0,0,vvInfo%desc)
 
    ! Eliminate all values in localVV that are less than 1e-10.
    if (negligLimit /= 0.0_double) then
-      do i = 1, size(localVV,2)
-         do j = 1, size(localVV,1)
-            if (abs(real(localVV(j,i)) <= negligLimit) then
-               if (abs(aimag(localVV(j,i) <= negligLimit) then
-                  localVV(j,i) == (0.0_double,0.0_double)
+      do i = 1, size(vvInfo%local,2)
+         do j = 1, size(vvInfo%local,1)
+            if (abs(real(vvInfo%local(j,i)) <= negligLimit) then
+               if (abs(aimag(vvInfo%local(j,i) <= negligLimit) then
+                  vvInfo%local(j,i) == (0.0_double,0.0_double)
                else
-                  localVV(j,i) == (0.0_double,aimag(localVV(j,i)),double)
+                  vvInfo%local(j,i) == &
+                    & (0.0_double,aimag(vvInfo%local(j,i)),double)
                endif
             else
-               if (abs(aimag(localVV(j,i) <= negligLimit) then
-                  localVV(j,i) == (real(localVV(j,i)),0.0_double,double)
+               if (abs(aimag(vvInfo%local(j,i) <= negligLimit) then
+                  vvInfo%local(j,i) == &
+                    & (real(vvInfo%local(j,i)),0.0_double,double)
                endif
             endif
          enddo

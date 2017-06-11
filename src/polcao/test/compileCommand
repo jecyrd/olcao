@@ -1,4 +1,6 @@
 #!/bin/bash
 
-ifort -O3 -xhost ../bst23.f90 ./bstTest.f90 -o bstTest
+#ifort -O3 -xhost ../bst23.f90 ./bstTest.f90 -o bstTest
 
+#mpif90 writeTest.F90 -o writeTest
+h5pfc writeTest.F90 -o writeTest

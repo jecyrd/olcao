@@ -214,7 +214,7 @@ module O_Orthogonalization
 
 #ifndef GAMMA
 
-subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo)
+subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
@@ -229,6 +229,7 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo)
    integer, intent(in) :: coreDim ! K
    type(ArrayInfo), intent(inout) :: vvInfo
    type(ArrayInfo), intent(inout) :: cvOLInfo
+   integer, intent(in) :: kp
 
    ! Do a rank 1 update. That is: C := alpha*A**H*A + beta*C where H equals
    !   complex conjugate and transpose. Also, alpha = -2 and beta = 1. The
@@ -243,8 +244,8 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo)
    !   character could be anything. But, be careful anyway. The documentation
    !   from IBM seems better: Search for Parallel ESSL.
    call pzherk('U','C',valeDim,coreDim,(-2.0_double,0.0_double),&
-         & cvOLInfo%local, 0, 0, cvOLInfo%desc, (1.0_double,0.0_double), &
-         & vvInfo%local, 0,0, vvInfo%desc)
+         & cvOLInfo%local(:,:,kp), 0, 0, cvOLInfo%desc, &
+         & (1.0_double,0.0_double), vvInfo%local(:,:,kp), 0,0, vvInfo%desc)
 
    ! For reference, the non-parallel approach would look like the following
    !   with (first) blas and (second) straight matmul:
@@ -257,7 +258,7 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo)
 
 end subroutine valeCoreCoreValeOL
 
-subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo)
+subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
@@ -273,10 +274,12 @@ subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo)
    type(ArrayInfo), intent(inout) :: vvInfo
    type(ArrayInfo), intent(inout) :: cvInfo
    type(ArrayInfo), intent(inout) :: cvOLInfo
+   integer, intent(in) :: kp
 
    call pzher2k('U','C',valeDim,coreDim,(-1.0_double,0.0_double),&
-         & cvOLInfo%local,0,0,cvOLInfo%desc,cvInfo%local,0,0,cvInfo%desc,&
-         & (1.0_double,0.0_double),vvInfo%local,0,0,vvInfo%desc)
+         & cvOLInfo%local(:,:,kp),0,0,cvOLInfo%desc,cvInfo%local(:,:,kp), &
+         & 0,0,cvInfo%desc,(1.0_double,0.0_double),vvInfo%local(:,:,kp),0,0, &
+         & vvInfo%desc)
 
    ! For reference, the non-parallel approach would look like the following
    !   with (first) blas and (second) straight matmul:
@@ -289,7 +292,7 @@ subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo)
 
 end subroutine valeCoreCoreVale
 
-subroutine valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo)
+subroutine valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
@@ -305,19 +308,21 @@ subroutine valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo)
    type(ArrayInfo), intent(inout) :: vcInfo
    type(ArrayInfo), intent(inout) :: ccInfo
    type(ArrayInfo), intent(inout) :: vcTempInfo
+   integer, intent(in) :: kp
 
    ! Note that localVC_temp is the resultant matrix.
 
    call pzhemm ('R','U',valeDim,coreDim,(1.0_double,0.0_double),&
-         & ccInfo%local,0,0,ccInfo%desc,vcInfo%local,0,0,vcInfo%desc,&
-         & (0.0_double,0.0_double),vcTempInfo%local,0,0,vcTempInfo%desc)
+         & ccInfo%local(:,:,kp) ,0,0,ccInfo%desc,vcInfo%local(:,:,kp),0,0, &
+         & vcInfo%desc,(0.0_double,0.0_double),vcTempInfo%local(:,:,kp), &
+         & 0,0,vcTempInfo%desc)
 
 end subroutine valeCoreCoreCore
 
 ! This subroutine will execute a VC*CV matrix multiplication and store the
 !   result in VV. (This should be Hermitian. This subroutine will also set
 !   numbers less that 1e-10 to zero to improve compressed storage.
-subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo)
+subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
@@ -333,6 +338,7 @@ subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo)
    type(ArrayInfo), intent(inout) :: vcTempInfo
    type(ArrayInfo), intent(inout) :: cvInfo
    type(ArrayInfo), intent(inout) :: vvInfo
+   integer, intent(in) :: kp
 
    ! Define loop control variables
    integer :: i,j
@@ -344,25 +350,25 @@ subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo)
    negligLimit = real(1.0D-10,double)
 
    call pzgemm ('N','N',valeDim,valeDim,coreDim,(1.0_double,0.0_double),&
-         & vcTempInfo%local,0,0,vcTempInfo%desc, &
-         & cvInfo%local,0,0,cvInfo%desc, (1.0_double,0.0_double), &
-         & vvInfo%local,0,0,vvInfo%desc)
+         & vcTempInfo%local(:,:,kp),0,0,vcTempInfo%desc, &
+         & cvInfo%local(:,:,kp),0,0,cvInfo%desc, (1.0_double,0.0_double), &
+         & vvInfo%local(:,:,kp),0,0,vvInfo%desc)
 
    ! Eliminate all values in localVV that are less than 1e-10.
    if (negligLimit /= 0.0_double) then
       do i = 1, size(vvInfo%local,2)
          do j = 1, size(vvInfo%local,1)
-            if (abs(real(vvInfo%local(j,i)) <= negligLimit) then
-               if (abs(aimag(vvInfo%local(j,i) <= negligLimit) then
-                  vvInfo%local(j,i) == (0.0_double,0.0_double)
+            if (abs(real(vvInfo%local(j,i,kp)) <= negligLimit) then
+               if (abs(aimag(vvInfo%local(j,i,kp) <= negligLimit) then
+                  vvInfo%local(j,i,kp) = (0.0_double,0.0_double)
                else
-                  vvInfo%local(j,i) == &
-                    & (0.0_double,aimag(vvInfo%local(j,i)),double)
+                  vvInfo%local(j,i,kp) = &
+                    & (0.0_double,aimag(vvInfo%local(j,i,kp)),double)
                endif
             else
-               if (abs(aimag(vvInfo%local(j,i) <= negligLimit) then
-                  vvInfo%local(j,i) == &
-                    & (real(vvInfo%local(j,i)),0.0_double,double)
+               if (abs(aimag(vvInfo%local(j,i,kp) <= negligLimit) then
+                  vvInfo%local(j,i,kp) = &
+                    & (real(vvInfo%local(j,i,kp)),0.0_double,double)
                endif
             endif
          enddo

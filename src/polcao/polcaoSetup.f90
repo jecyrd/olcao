@@ -323,8 +323,10 @@ end subroutine getArrAtomPairs
 function checkRectOverlap(lo1, hi1, lo2, hi2)
   implicit none
 
-  ! Define self and passed parameters
+  ! Define this function
   logical :: checkRangeOverlap
+
+  ! Define self and passed parameters
   integer, intent(in), dimension(2) :: lo1, hi1, lo2, hi2
 
   if ( (lo1(2)=<hi2(2)) .and. (hi1(2)>=lo2(2)) .and. &
@@ -360,8 +362,10 @@ end subroutine getOverlapRect
 function inRectangle(i,j, loOvlp, hiOvlp)
   implicit none
 
+  ! Define this function
+  integer :: inRectangle
+
   ! Define passed parameters and return value
-  integer :: inintersection
   integer, intent(in) :: i,j
   integer, intent(in), dimension(2) :: loOvlp, hiOvlp
 

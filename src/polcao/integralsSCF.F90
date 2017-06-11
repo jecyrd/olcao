@@ -431,8 +431,7 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
 #endif
 
    ! Perform orthogonalization and save the results to disk.
-   call orthoOL(descriptCC,descriptVV,descriptCV_OL,descriptVC_OL,localCC,&
-         & localVV,localCV_OL,localVC_OL,1)
+   call orthoOL(vvArrayInfo, ccArrInfo, cvOLArrINfo, blcsinfo, potDim)
 
    ! Deallocate the atomPair list
    call destroyAtomList(atomPairs)
@@ -2199,9 +2198,9 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
 
 end subroutine electronicPE
 
-
-subroutine orthoOL(descriptCC,descriptVV,descriptCV_OL,descriptVC_OL,localCC,&
-      & localVV,localCV_OL,localVC_OL,potDim)
+subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
+!  orthoOL(descriptCC,descriptVV,descriptCV_OL,descriptVC_OL,localCC,&
+!      & localVV,localCV_OL,localVC_OL,potDim)
 
    ! Use necessary modules.
    use O_Kinds
@@ -2218,38 +2217,37 @@ subroutine orthoOL(descriptCC,descriptVV,descriptCV_OL,descriptVC_OL,localCC,&
    implicit none
 
    ! Define passed variables.
-   integer, dimension(9), intent(in) :: descriptCC
-   integer, dimension(9), intent(in) :: descriptVV
-   integer, dimension(9), intent(in) :: descriptCV_OL
-   integer, dimension(9), intent(in) :: descriptVC_OL
-#ifndef GAMMA
-   complex (kind=double), dimension (:,:,:), intent (inout) :: localCC
-   complex (kind=double), dimension (:,:,:), intent (inout) :: localVV
-   complex (kind=double), dimension (:,:,:), intent (inout) :: localCV_OL
-   complex (kind=double), dimension (:,:,:), intent (inout) :: localVC_OL
-#else
-   real (kind=double), dimension (:,:,:), intent (inout) :: localCC
-   real (kind=double), dimension (:,:,:), intent (inout) :: localVV
-   real (kind=double), dimension (:,:,:), intent (inout) :: localCV_OL
-   real (kind=double), dimension (:,:,:), intent (inout) :: localVC_OL
-#endif
+   type(ArrayInfo), intent(in) :: vvArrayInfo, ccArrInfo, cvOLArrInfo
+   type(BlacsInfo), intent(in) :: blcsinfo
    integer, intent(in) :: potDim
+!#ifndef GAMMA
+!   complex (kind=double), dimension (:,:,:), intent (inout) :: localCC
+!   complex (kind=double), dimension (:,:,:), intent (inout) :: localVV
+!   complex (kind=double), dimension (:,:,:), intent (inout) :: localCV_OL
+!   complex (kind=double), dimension (:,:,:), intent (inout) :: localVC_OL
+!#else
+!   real (kind=double), dimension (:,:,:), intent (inout) :: localCC
+!   real (kind=double), dimension (:,:,:), intent (inout) :: localVV
+!   real (kind=double), dimension (:,:,:), intent (inout) :: localCV_OL
+!   real (kind=double), dimension (:,:,:), intent (inout) :: localVC_OL
+!#endif
 
    ! Define local variables.
    integer :: i,j,k
    integer :: hdferr
    integer :: currIndex
-   integer :: mpiRank,mpiErr
-   integer, dimension (9) :: descriptVC_temp
-#ifndef GAMMA
-   complex (kind=double), dimension (:,:) :: localVC_temp
-#else
-   real (kind=double), dimension (:,:) :: localVC_temp
-#endif
+   integer :: mpiRank, mpiErr, mpidtype, commDataSize
+   integer, dimension(MPI_STATUS_SIZE) :: mpistatus
+   type(ArrayInfo) :: vcTempInfo
+!#ifndef GAMMA
+!   complex (kind=double), dimension (:,:) :: localVC_temp
+!#else
+!   real (kind=double), dimension (:,:) :: localVC_temp
+!#endif
 
-   ! Allocate space for the localVC_temp.  (Needs to be the same size as the
-   !   localVC.)
-   allocate (localVC_temp(,))
+   ! Setup the local array info for the temporary valeCore matrix used in
+   ! these subroutines.
+   call setupArrayDesc(vcTempInfo, blcsinfo, valeDim, coreDim, numKPoints)
 
    do i = 1, numKPoints
 
@@ -2265,21 +2263,23 @@ subroutine orthoOL(descriptCC,descriptVV,descriptCV_OL,descriptVC_OL,localCC,&
          ! Subtract 2 * the product of (coreValeOL**H)(coreValeOL) from the
          !   valeVale matrix. See documentation in intgOrtho.F90 for details.
          call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo)
+         call valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo, i)
 
 
          ! Form product of (valeCoreOL)(coreCore) and store into the temp
          !   matrix (valeCore_temp).
          call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call valeCoreCoreCore (valeDim,coreDim,descriptVC,descriptCC,&
-               & descriptVC_temp,localVC(:,:,i),localCC(:,:,i),localVC_temp)
+         call valeCoreCoreCore(valeDim, coreDim, vcInfo, ccInfo, vcTempInfo, i)
+         !call valeCoreCoreCore (valeDim,coreDim,descriptVC,descriptCC,&
+         !      & descriptVC_temp,localVC(:,:,i),localCC(:,:,i),localVC_temp)
 
          ! Finally compute the product of (valeCore_temp)(coreValeOL) and add
          !   it to the (valeVale). This completes the orthogonalization of the
          !   two-center overlap VV matrix against the core.
          call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call makeValeVale (valeDim,coreDim,descriptVC_temp,decriptCV,&
-               & descriptVV,localVC_temp,localCV(:,:,i),localVV(:,:,i))
+         call makeValeVale (valeDim, coreDim, vcTempInfo, cvInfo, vvInfo, i)
+         !call makeValeVale (valeDim,coreDim,descriptVC_temp,decriptCV,&
+         !      & descriptVV,localVC_temp,localCV(:,:,i),localVV(:,:,i))
 #else
 
          ! Initialize the localVC_temp to zero.
@@ -2308,10 +2308,62 @@ subroutine orthoOL(descriptCC,descriptVV,descriptCV_OL,descriptVC_OL,localCC,&
 
    enddo
 
-   call MPI_Comm_rank(MPI_COMM_WORLD,mpiRank,mpiErr)
+#ifndef gamma
+   mpidtype = MPI_DOUBLE_COMPLEX
+#else
+   mpidtype = MPI_DOUBLE_PRECISION
+#endif
+   commDataSize = size(vvInfo%local
+   call MPI_Barrier(MPI_COMM_WORLD, mpierr)
    if (mpiRank == 0) then
-      call writeValeVale(ga_valeVale,1,numKPoints,potDim,0,0,valeDim)
+      ! Write out Process 0's information
+      call writeValeVale( )
+
+      ! Set temporary array information
+
+      ! Deallocate array
+
+      ! Allocate temporary array
+
    endif
+
+   ! MAKE A NOTE ABOUT THE COUPLE DIFFERENT WAYS THIS COULD BE WROTE OUT.
+   ! but just finish this way for now.
+   call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+   ! Communicate with other processes and write out their information
+   do i=1,blcsinfo%mpisize-1
+     ! Other processes send local array
+     if (mpirank == i) then
+       ! First we need information from the process about the process row, and
+       ! column. Also, we need to know the size of the array to allocate.
+       sdata = (/pr,pc,size(local(1)),size(local(2))/)
+       call MPI_Send(sdata, 4, MPI_INTEGER, 0, tag, &
+         & MPI_COMM_WORLD, mpierr)
+
+       ! Now we can send the builk of the data
+       call MPI_Send(vvInfo%local(:,:), (size(), mpidtype, 0, tag, &
+         & MPI_COMM_WORLD, mpierr)
+     endif
+
+     ! Process zero recieves array and writes to disk
+     if (mpirank == 0) then
+       ! First receive information about the process and local array
+       call MPI_Recv(sdata, 4, MPI_INTEGER, i, tag, &
+         & MPI_COMM_WORLD, mpistatus, mpierr)
+
+       tempBlcsInfo%myprow = sdata(1)
+       tempBlcsInfo%mypcol = sdata(2)
+       tempArrInfo%mb = sdata(3)
+       tempArrInfo%nb = sdata(4)
+       ! Receive the local array information
+       call MPI_Recv(tempArrInfo%local, (), mpidtype, i, tag, &
+         & MPI_COMM_WORLD, mpistatus, mpierr)
+
+       call writeValeVale( )
+     endif
+
+     call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+   enddo
 
    ! Deallocate the localVC_temp
    deallocate (localVC_temp)

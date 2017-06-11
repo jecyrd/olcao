@@ -303,8 +303,11 @@ end subroutine getArrDesc
 ! coordinates of the "bottom right" element of a local block. This'll allow us
 ! to tell which elements of the global array we require to fill a local block.
 !
-! Using the above equations we can obtain:
-!  I = (a-x)*Pr + 1    J = (b-y)*Pc + 1
+! Additionally we can calculate I, and J with the following equations:
+!         I = (l*Pr + pr)*MB + x,  J = (m*Pc + pc)*NB + y
+! Using the above for l and m we can obtain:
+!   I = (((a-x)/MB)*Pr + pr)*MB + x,  J = (((b-y)/NB)*Pc + pc)*NB + y
+!
 ! By setting x and y to 0. We can obtain the "top left" global coordinate. Then
 ! by setting x and y to (MB-1) and (NB-1) respectively, we obtain the
 ! "bottom right" coordinate of the global array.
@@ -327,18 +330,20 @@ subroutine localToGlobalMap(a, b, glo, ghi, arrinfo, blcsinfo, extra)
                                !   3 both nrows and ncols is less than nb and mb
 
   ! Calculate the upper left corner
-  glo(1) = (a-0)*blcsinfo%prows + 1
-  glo(2) = (b-0)*blcsinfo%pcols + 1
+  glo(1) = (((a-0)/arrinfo%mb)*blcsinfo%prows+blcsinfo%myprow)*arrinfo%mb + 0
+  glo(2) = (((b-0)/arrinfo%nb)*blcsinfo%pcols+blcsinfo%mypcol)*arrinfo%nb + 0
+  !glo(1) = (a-0)*blcsinfo%myprows + 1
+  !glo(2) = (b-0)*blcsinfo%mypcols + 1
 
   ! Calculate the bottom right corner
   if (extra == 0) then
-    ghi(1) = (a-arrinfo%mb)*blcsinfo%prows + 1
-    ghi(2) = (b-arrinfo%nb)*blcsinfo%pcols + 1
+    ghi(1) = glo(1) + arrinfo%mb
+    ghi(2) = glo(2) + arrinfo%nb
   elseif (extra == 1) then
     ghi(1) = glo(1) + arrinfo%extraBlockRows
-    ghi(2) = (b-arrinfo%nb)*blcsinfo%pcols + 1
+    ghi(2) = glo(2) + arrinfo%nb
   elseif (extra == 2) then
-    ghi(1) = (a-arrinfo%mb)*blcsinfo%prows + 1
+    ghi(1) = glo(1) + arrinfo%mb
     ghi(2) = glo(2) + arrinfo%extraBlockCols
   elseif (extra == 3) then
     ghi(1) = glo(1) + arrinfo%extraBlockRows

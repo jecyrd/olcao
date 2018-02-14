@@ -5,7 +5,6 @@ module O_Parallel
 
   implicit none
 
-  contains
 
   ! Notation choice was chosen as a result of the netlib documentation
   ! and can be viewd at: http://netlib.org/scalapack/slug/node76.html
@@ -41,12 +40,17 @@ module O_Parallel
     integer :: J
     integer :: numKP
 
-    ! Togethere mb and nb define the block size used for the block-cyclic
+    ! Together mb and nb define the block size used for the block-cyclic
     ! distribution.
     ! This is the blocking factor used to distribute the rows of the array
     integer :: mb
     ! This is the blocking factor used to distribute the columns of the array
     integer :: nb
+
+    ! This is the number of blocks along the rows that the process has
+    integer :: nrblocks
+    ! This is the number of blocks along the columns that the process has
+    integer :: ncblocks
     
     ! Holds the extra dimensions for a process in the event that the matrix
     ! is not evenly distributable
@@ -54,12 +58,48 @@ module O_Parallel
     integer :: extraCols
 
     ! The local array that will contain the distributed data
-#ifndef GAMMA
+!#ifndef GAMMA
     complex (kind=double), allocatable, dimension(:,:,:) :: local
-#else
-    real (kind=double), allocatable, dimension(:,:) :: local
-#endif
+!#else
+!    real (kind=double), allocatable, dimension(:,:) :: local
+!#endif
   end type ArrayInfo
+ 
+  ! Same as above but only used for the gamma case
+  type gArrayInfo
+
+    ! This is the BLACS array descriptor assosciated with some array
+    integer, dimension(9) :: desc
+
+    ! These are the size of the dimensions of the global array
+    integer :: I
+    integer :: J
+    integer :: numKP
+
+    ! Together mb and nb define the block size used for the block-cyclic
+    ! distribution.
+    ! This is the blocking factor used to distribute the rows of the array
+    integer :: mb
+    ! This is the blocking factor used to distribute the columns of the array
+    integer :: nb
+    
+    ! This is the number of blocks along the rows that the process has
+    integer :: nrblocks
+    ! This is the number of blocks along the columns that the process has
+    integer :: ncblocks
+    
+    ! Holds the extra dimensions for a process in the event that the matrix
+    ! is not evenly distributable
+    integer :: extraRows
+    integer :: extraCols
+
+    ! The local array that will contain the distributed data
+    real (kind=double), allocatable, dimension(:,:) :: local
+
+  end type gArrayInfo
+ 
+  ! Begin list of subroutines and functions
+  contains
 
 ! This subroutine uses a modified Cantor pairing function to encode 2 natural
 ! numbers into 1 natural number. Normally the Cantor pairing function is 
@@ -77,9 +117,9 @@ subroutine modifiedCantor(i, j, res)
   integer, intent(out) :: res
 
   if (i<=j) then
-    cantorPairing(i,j,res)
+    call cantorPairing(i,j,res)
   else
-    cantorPairing(j,i,res)
+    call cantorPairing(j,i,res)
   endif
 end subroutine modifiedCantor
 
@@ -113,8 +153,8 @@ subroutine cantorInverse(z, k1, k2)
   ! Define local variables
   integer :: w, t
 
-  w = floor( (sqrt(8*z + 1) - 1) / 2 )
-  t = (w^2 + w) / 2
+  w = floor( (sqrt(dble(8*z + 1)) - 1.0) / 2 )
+  t = (w**2 + w) / 2
 
   k2 = z - t
   k1 = w - k2
@@ -123,26 +163,34 @@ end subroutine cantorInverse
 ! This subroutine calculates the process grid dimensions and sets up the 
 ! blacs context for a distributed operation
 subroutine setupBlacs(blcsinfo)
+  use MPI
+
   implicit none
 
   ! Define passed parameters
-  type(BlacsInfo), intent(out) :: blcsinfo
+  type(BlacsInfo), intent(inout) :: blcsinfo
+
+  ! Define local varaibles
+  integer :: mpierr
 
   call MPI_Comm_rank(MPI_COMM_WORLD, blcsinfo%mpirank, mpierr)
   call MPI_Comm_size(MPI_COMM_WORLD, blcsinfo%mpisize, mpierr)
 
   ! First we need to calculate the processor grid
-  calcProcGrid(blcsinfo)
+  call calcProcGrid(blcsinfo)
 
-  call BLACS_GET(-1,0, blcsinfo%ctxt)
-  call BLACS_GRIDINIT(blcsinfo%ctxt, 'r', blcsinfo%prows, blcsinfo%pcols)
-  call BLACS_GRIDINFO(blcsinfo%ctxt, blcsinfo%prows, blcsinfo%pcols, &
+  call BLACS_GET(-1,0, blcsinfo%context)
+  
+  call BLACS_GRIDINIT(blcsinfo%context, 'r', blcsinfo%prows, blcsinfo%pcols)
+  
+  call BLACS_GRIDINFO(blcsinfo%context, blcsinfo%prows, blcsinfo%pcols, &
     & blcsinfo%myprow, blcsinfo%mypcol)
 
-end subroutine setubBlacs
+end subroutine setupBlacs
 
 ! This subroutine calculates the dimensions of the processor grid given 
-! the number of available processes
+! the number of available processes. This subroutine creates a process grid
+! that is as close to square as possible.
 subroutine calcProcGrid(blcsinfo)
   implicit none
 
@@ -150,7 +198,7 @@ subroutine calcProcGrid(blcsinfo)
   type(BlacsInfo), intent(inout) :: blcsinfo
 
   blcsinfo%prows = int(sqrt(dble(blcsinfo%mpisize)))
-  blcsinfo%pcols = blcsinfo%mpisize/prow
+  blcsinfo%pcols = blcsinfo%mpisize / blcsinfo%prows
 end subroutine calcProcGrid
 
 subroutine setupArrayDesc(arrinfo, blcsinfo, numGlobalRows, numGlobalCols, &
@@ -158,7 +206,7 @@ subroutine setupArrayDesc(arrinfo, blcsinfo, numGlobalRows, numGlobalCols, &
   implicit none
 
   ! Define Passed Parameters
-  type(BlacsInfo), intent(in) :: blcsinfo
+  type(BlacsInfo), intent(inout) :: blcsinfo
   type(ArrayInfo), intent(inout) :: arrinfo
   integer, intent(in) :: numGlobalRows, numGlobalCols
   integer, intent(in) :: numKP
@@ -169,7 +217,7 @@ subroutine setupArrayDesc(arrinfo, blcsinfo, numGlobalRows, numGlobalCols, &
 
   ! First we need to calculate the blocking factors, mb, nb, and if there are
   ! any extra dimensions
-  call getBlockDims(arrinfo)
+  call getBlockDims(arrinfo, blcsinfo)
 
   ! Now that we have our block dims, we have sufficient information to allocate
   ! the local array assosciated with each process.
@@ -196,8 +244,8 @@ subroutine getBlockDims(arrinfo, blcsinfo)
   ! routine we know that procGridRows will be <= procGridCols.
   ! Because of this we'll do the integer divide on procGridCols, ensuring
   ! that our blocks are square.
-  arrinfo%mb =  int(arrinfo%I / blcsinfo%prows)
-  arrinfo%nb =  int(arrinfo%J / blcsinfo%pcols)
+  arrinfo%mb =  int(arrinfo%I / blcsinfo%mpisize)
+  arrinfo%nb =  int(arrinfo%J / blcsinfo%mpisize)
 
   ! For the case that global matrix doesn't divide perfectly by our choice in
   ! block size, there will be a couple extra rows and columns that need to be 
@@ -210,18 +258,24 @@ subroutine getBlockDims(arrinfo, blcsinfo)
   ! of the process grid, because we have to maintain the block cyclic
   ! distribution. This is why the calculation is done in this way. For more info
   ! see http://netlib.org/scalapack/slug/node78.html
-  extraRow = mod( arrinfo%I/arrinfo%nb, blcsinfo%prows)
-  extraCol = mod( arrinfo%J/arrinfo%mb, blcsinfo%pcols)
+  extraRow = mod( arrinfo%I/arrinfo%nb, blcsinfo%mpisize)
+  extraCol = mod( arrinfo%J/arrinfo%mb, blcsinfo%mpisize)
 
-  if ( extraRow == arrinfo%myprow ) then
-    myinfo%extraBlockRows = mod(arrinfo%I, arrinfo%mb)
+  ! Calculate the number of blocks along rows and columns
+  arrinfo%nrblocks = int(arrinfo%I / arrinfo%mb / blcsinfo%prows)
+  arrinfo%ncblocks = int(arrinfo%J / arrinfo%nb / blcsinfo%pcols)
+
+  if ( extraRow == blcsinfo%myprow ) then
+    arrinfo%extraRows = mod(arrinfo%I, arrinfo%mb)
+    arrinfo%nrblocks = arrinfo%nrblocks+1
   else
-    myinfo%extraBlockRows = 0
+    arrinfo%extraRows = 0
   endif
-  if ( extraCol == arrinfo%mypcol ) then
-    myinfo%extraBlockCols = mod(arrinfo%J, arrinfo%nb)
+  if ( extraCol == blcsinfo%mypcol ) then
+    arrinfo%extraCols = mod(arrinfo%J, arrinfo%nb)
+    arrinfo%ncblocks = arrinfo%ncblocks+1
   else
-    myinfo$extraBlockCols = 0
+    arrinfo%extraCols = 0
   endif
 end subroutine getblockDims
 
@@ -243,22 +297,33 @@ subroutine allocLocalArray(arrinfo, blcsinfo)
   ! External Functions
   integer, external :: numroc
 
-  nlrows = numroc(arrinfo%I, arrinfo%mb, blcsinfo%myrow, 0, blcsinfo%prows)
-  nlcols = numroc(arrinfo%J, arrinfo%nb, blcsinfo%mycol, 0, blcsinfo%pcols)
+  nlrows = numroc(arrinfo%I, arrinfo%mb, blcsinfo%myprow, 0, blcsinfo%prows)
+  nlcols = numroc(arrinfo%J, arrinfo%nb, blcsinfo%mypcol, 0, blcsinfo%pcols)
 
-#ifndef GAMMA
+!#ifndef GAMMA
   allocate(arrinfo%local(nlrows,nlcols,arrInfo%numKP))
-#else
-  allocate(arrinfo%local(nlrows,nlcols))
-#endif
+!#else
+!  allocate(arrinfo%local(nlrows,nlcols))
+!#endif
 
   ! initialize the local array to zero
-#ifndef GAMMA
+!#ifndef GAMMA
   arrinfo%local(:,:,:) = cmplx(0.0_double, 0.0_double)
-#else
-  arrinfo%local(:,:) = 0.0_double
-#endif
+!#else
+!  arrinfo%local(:,:) = 0.0_double
+!#endif
 end subroutine allocLocalArray
+
+! This subroutine cleans up our local array which was allocated in the routine
+! above
+subroutine deallocLocalArray(arrinfo)
+  implicit none
+
+  ! Define passed parameters
+  type(ArrayInfo), intent(inout) :: arrinfo
+
+  deallocate(arrinfo%local)
+end subroutine deallocLocalArray
 
 ! This subroutine initializes the BLACS array descriptor and 
 subroutine getArrDesc(arrinfo, blcsinfo)
@@ -276,7 +341,7 @@ subroutine getArrDesc(arrinfo, blcsinfo)
 
   if (info) then
     print *, "BLACS Routine DESCINIT did not exit successfully. Exiting"
-    exit
+    stop
   endif
 
 end subroutine getArrDesc
@@ -340,21 +405,21 @@ subroutine localToGlobalMap(a, b, glo, ghi, arrinfo, blcsinfo, extra)
     ghi(1) = glo(1) + arrinfo%mb
     ghi(2) = glo(2) + arrinfo%nb
   elseif (extra == 1) then
-    ghi(1) = glo(1) + arrinfo%extraBlockRows
+    ghi(1) = glo(1) + arrinfo%extraRows
     ghi(2) = glo(2) + arrinfo%nb
   elseif (extra == 2) then
     ghi(1) = glo(1) + arrinfo%mb
-    ghi(2) = glo(2) + arrinfo%extraBlockCols
+    ghi(2) = glo(2) + arrinfo%extraCols
   elseif (extra == 3) then
-    ghi(1) = glo(1) + arrinfo%extraBlockRows
-    ghi(2) = glo(2) + arrinfo%extraBlockCols
+    ghi(1) = glo(1) + arrinfo%extraRows
+    ghi(2) = glo(2) + arrinfo%extraCols
   endif
 
 end subroutine localToGlobalMap 
 
 ! Refer to documentation above localToGlobalMap. This subroutine calculates
 ! the local array indices for a section of the global
-subroutine globalToLocalMap(glo, ghi, llo, lhi, arrinfo, blcsinfo)
+subroutine globalToLocalMap(glo, ghi, llo, lhi, arrinfo, blcsinfo, extra)
   implicit none
 
   ! Define passed parameters
@@ -362,7 +427,12 @@ subroutine globalToLocalMap(glo, ghi, llo, lhi, arrinfo, blcsinfo)
   type(ArrayInfo), intent(in) :: arrinfo
   integer, dimension(2), intent(in) :: glo, ghi 
   integer, dimension(2), intent(out) :: llo, lhi ! target local values
-  integer, intent(in) :: extra
+  integer, intent(in) :: extra ! Control variable that denotes if we are doing
+                               ! a irregular size block. Options
+                               ! = 0 normal block size
+                               !   1 nrows is less than mb
+                               !   2 ncols is less than nb
+                               !   3 both nrows and ncols is less than nb and mb
 
   llo(1) = ((glo(1)-1)/blcsInfo%myprow) + mod(glo(1),arrInfo%mb) + 1
   llo(2) = ((glo(2)-1)/blcsInfo%mypcol) + mod(glo(2),arrInfo%nb) + 1
@@ -371,14 +441,14 @@ subroutine globalToLocalMap(glo, ghi, llo, lhi, arrinfo, blcsinfo)
     lhi(1) = ((ghi(1)-1)/blcsInfo%myprow) + mod(ghi(1),arrInfo%mb) + 1
     lhi(2) = ((ghi(2)-1)/blcsInfo%mypcol) + mod(ghi(2),arrInfo%nb) + 1
   elseif (extra == 1) then
-    lhi(1) = llo(1) + arrinfo%extraBlockRows
+    lhi(1) = llo(1) + arrinfo%extraRows
     lhi(2) = ((ghi(2)-1)/blcsInfo%mypcol) + mod(ghi(2),arrInfo%nb) + 1
   elseif (extra == 2) then
     lhi(1) = ((ghi(1)-1)/blcsInfo%myprow) + mod(ghi(1),arrInfo%mb) + 1
-    lhi(2) = llo(2) + arrinfo%extraBlockCols
+    lhi(2) = llo(2) + arrinfo%extraCols
   elseif (extra == 3) then
-    lhi(1) = llo(1) + arrinfo%extraBlockRows
-    lhi(2) = llo(2) + arrinfo%extraBlockCols
+    lhi(1) = llo(1) + arrinfo%extraRows
+    lhi(2) = llo(2) + arrinfo%extraCols
   endif
 
 end subroutine globalToLocalMap

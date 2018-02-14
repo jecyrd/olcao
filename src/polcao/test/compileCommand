@@ -3,4 +3,5 @@
 #ifort -O3 -xhost ../bst23.f90 ./bstTest.f90 -o bstTest
 
 #mpif90 writeTest.F90 -o writeTest
-h5pfc writeTest.F90 -o writeTest
+#h5pfc -g ../../kinds.f90 ../parallel.f90 writeTest.F90 -o writeTest -mkl=cluster 
+h5pfc -g ../../kinds.f90 ../parallel.f90 writeTest.F90 -o writeTest -lmkl_intel_lp64 -lmkl_cdft_core -lmkl_scalapack_lp64 -lmkl_blacs_openmpi_lp64 -lmkl_sequential -lmkl_core -liomp5 -lifport -limf -lintlc -lsvml -lifcoremt -lirng

@@ -604,8 +604,7 @@ subroutine writeResolve(toBalance, initialVal, finalVal,numProcs,tmpRank,valeDim
 end subroutine writeResolve
 
 ! This subroutine writes the valeVale matrix to disk, for the case that the
-! orthogonaliztion is done. I realize it is kind of confusing and maybe
-! not so straight forward so I will do my best to explain it.
+! orthogonaliztion is done. 
 ! What happens is that for a small block of the matrix, we pull it down
 ! from a global array, to a local one on the single process execcuting
 ! the write to HDF5 sections from integralSCF. It then writes it to disk,
@@ -613,7 +612,7 @@ end subroutine writeResolve
 ! The reason this was done instead of PHDF5 was because of
 ! NFS (Network File System) writes being inneficcient under the PHDF5
 ! paradigm as of HDF5 version 1.8.12.
-subroutine writeValeVale(ga_valeVale,opCode,numKPoints,potDim, & 
+subroutine writeValeVale(localVV, opCode, numKPoints, potDim, & 
     & currPotTypeNumber,currAlphaNumber,valeDim)
   use HDF5
   use O_Kinds
@@ -622,8 +621,6 @@ subroutine writeValeVale(ga_valeVale,opCode,numKPoints,potDim, &
   use O_PotTypes
   
   implicit none
-#include "mafdecls.fh"
-#include "global.fh"
 
   integer, intent(in),dimension(:) :: ga_valeVale
   integer, intent(in) :: opCode,valeDim

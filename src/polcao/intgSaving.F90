@@ -305,7 +305,6 @@ subroutine atomAtomSaving (loStateIndex, hiStateIndex, currentPair, &
    type(BlacsInfo), intent(in) :: blcsInfo
 
    ! Define local variables
-   integer :: nrBlocks, ncBlocks ! Number of blocks along row and columns
    integer :: row, col ! Loop variables
    integer :: a, b     ! Block local indices
    integer, dimension(2) :: lblock, hblock ! Block global indices
@@ -322,22 +321,8 @@ subroutine atomAtomSaving (loStateIndex, hiStateIndex, currentPair, &
    integer :: extra ! Variable to denote irregular size in one dimension
                     ! see localToGlobalMap in O_Parallel for description
 
-   ! First get the number of blocks in our local vale array
-   nrBlocks = len(arrInfo%local,1)/arrInfo%mb
-   nrBlocks = len(arrInfo%local,2)/arrInfo%nb
-
-   ! If we have extra rows and columns because the blocking factor didn't divide
-   ! the dimensions of the global array equally, then we need to consider 1
-   ! more block, which is smaller than usual.
-   if (arrInfo%extraBlockRows > 0) then
-     nrBlocks = nrBlocks + 1
-   endif
-   if (arrInfo%extraBlockCols > 0) then
-     ncBlocks = ncBlocks + 1
-   endif
-   
-   do row=1,nrBlocks
-      do col=1,ncBlocks
+   do row=1,arrinfo%nrblocks
+      do col=1,arrinfo%ncblocks
          ! Need to set extra if we have an irregularly size block that needs to
          ! be handled. If we are at the last block and there are extra rows or
          ! columns, we need to set extra to reflect that. Specifically for J
@@ -345,10 +330,10 @@ subroutine atomAtomSaving (loStateIndex, hiStateIndex, currentPair, &
          ! have extra rows for this block. However, if extra was already set to
          ! 1 then we have both extra rows and columns.
          extra = 0
-         if ((row == nrBlocks) .and. (arrInfo%extraBlockRows>0)) then
+         if ((row == arrinfo%nrblocks) .and. (arrInfo%extraBlockRows>0)) then
            extra = 1
          endif
-         if ((col == ncBlocks) .and. (arrInfo%extraBlockCols>0)) then
+         if ((col == arrinfo%ncblocks) .and. (arrInfo%extraBlockCols>0)) then
            if (extra == 0) then
              extra = 2
            elseif (extra == 1) then
@@ -357,11 +342,11 @@ subroutine atomAtomSaving (loStateIndex, hiStateIndex, currentPair, &
          endif
 
          ! Now we calculate our block's local starting indices
-         a = row * arrInfo%mb
-         b = col * arrInfo%nb
+         a = ((row-1) * arrinfo%mb) + 1
+         b = ((col-1) * arrinfo%nb) + 1
 
-         ! Now localToGlobalMap sets our blocks global indices and stores in
-         ! lblock and hblock
+         ! Now localToGlobalMap sets calculates blocks global indices and 
+         ! stores in lblock and hblock
          call localToGlobalMap(a, b, lblock, hblock, arrInfo, blcsInfo, extra)
 
          ! Now we need to check if this block's global indices, overlap with the
@@ -369,7 +354,7 @@ subroutine atomAtomSaving (loStateIndex, hiStateIndex, currentPair, &
          if (checkRectOverlap(lblock, hblock, loStateIndex,hiStateIndex)) then
 
             ! If there is an overlap, we need to know what the overlap is
-            ! getOverlapRect will set loSect, hiSect to the bounds of the
+            ! getOverlapRect will set loOverlap, hiOverlap to the bounds of the
             ! overlap.
             call getOverlapRect(lblock, hblock, loStateIndex, &
               & hiStateIndex, loOverlap, hiOverlap)
@@ -379,29 +364,11 @@ subroutine atomAtomSaving (loStateIndex, hiStateIndex, currentPair, &
             call globalToLocalMap(loOverlap, hiOverlap, locallo, &
               & localhi, arrInfo, blcsInfo, extra)
             
-            ! Save the valence valence part.  The upper triangle contains the
-            ! real part while the strict lower triangle contains the imaginary 
-            ! part. We need to check if the calculated global indices were on
-            ! the lower half o fthe triangle or the upper half. This determines
-            ! whether we call this subroutine with currentPair or
-            ! currentPairDagger
-            if (loOverlap(2) >= hiOverlap(1)) then ! if j>i upper half
-              ! We are on the top half of the global
-              !call valeValeSaving (i,j,kPointCount, locallo, localhi, &
-              !  & loOverlap, hiOverlap, currentPair, arrInfo, blcsInfo)
-              arrInfo%local(locallo(1):localhi(1), locallo(2):localhi(2), :) = &
-                & currentPair(globallo(1):globalhi(1), &
-                & globallo(2):globalhi(2), :)
-              atomAtomSaving(locallo, localhi, globallo, globalhi, &
-                & currentPair, arrInfo)
-            else
-              ! We are on the bottom half of the global
-              !call valeValeSaving (i,j,kPointCount, locallo, localhi, &
-              !  & loOverlap, hiOverlap, currentPair, arrInfo, blcsInfo)
-              arrInfo%local(locallo(1):localhi(1), locallo(2):localhi(2), :) = &
-                & currentPairDagger(globallo(1):globalhi(1), &
-                & globallo(2):globalhi(2), :)
-            endif
+            ! With all the information calculated we should now be able to
+            ! store the elements of current pair into our local array
+            arrInfo%local(locallo(1):localhi(1), locallo(2):localhi(2), :) = &
+              & currentPair(lowOverlap(1):hiOverlap(1), &
+              & loOverlap(2):hiOverlap(2), :)
          endif
       enddo
    enddo
@@ -609,7 +576,7 @@ subroutine coreCoreSaving (atom1,atom2,kPointCount,valeStateNum,&
    ldCmplx(1) = dagEnd(1)-dagStart(1)+1
    ldCmplx(2) = dagEnd(2)-dagStart(2)+1
 
-   do i = 1, kPointCoun
+   do i = 1, kPointCount
       call ga_put(ga_cc(i), startIndices(1),endIndices(1),&
             & startIndices(2), endIndices(2), &
             & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1),&

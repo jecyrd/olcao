@@ -4,14 +4,14 @@ module O_ParallelSetup
   use MPI
   implicit none
 
-  contains
-
   ! This is a linked list element
   type AtomPair
     integer :: I
     integer :: J
     type(atomPair), pointer :: next
   end type AtomPair
+
+contains
 
 ! This subroutine initializes a new element in the atomPair linked list
 subroutine initAtomPair(atomNode)
@@ -151,8 +151,11 @@ subroutine findPackedIndex(packedIndex, x, y)
 end subroutine findPackedIndex
 
 subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs)
+  use O_Parallel, only: ArrayInfo, BlacsInfo
+  use O_23bst, only: bst_node, tree_init, tree_destroy
+
   implicit none
-  
+ 
   ! Define passed parameters
   type(ArrayInfo), intent(inout) :: vvinfo, ccinfo, cvinfo
   type(BlacsInfo), intent(inout) :: blcsinfo
@@ -169,7 +172,7 @@ subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs)
   ! Need to figure out a better way to initialize the atomTree but for now
   ! we're just gonna put a zero in it, representing cantor pairing of 0,0
   ! which we should never have anyway.
-  call tree_init(tree, 0)
+  call tree_init(atomTree, 0)
 
   ! We need to call getArrAtomPairs 3 times one for each array
   call getArrAtomPairs(vvinfo, blcsinfo, atomPairs, atomTree, 0)
@@ -195,7 +198,8 @@ end subroutine getAtomPairs
 ! This subroutine can only be run once for each local array. So it'll need to 
 ! be called 3 times, once each for valeVale, coreCore, valeCore.
 subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
-  use O_Parallel, only :: localToGlobalMap
+  use O_Parallel, only: localToGlobalMap, ArrayInfo, BlacsInfo
+  use O_23bst, only: bst_node, tree_init, tree_destroy
 
   implicit none
 
@@ -209,13 +213,11 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
                       ! = 0  valeVale array
                       !   1  coreCore array
                       !   3  coreVale array
-  integer, dimension(2), intent(out) :: alo, ahi
   
 
   ! Define local variables
   integer, dimension(2) :: glo, ghi ! Returned indices from globalToLocalMAp
-  integer :: nrBlocks ! The number of blocks along the local row
-  integer :: ncBlocks ! The number of blocks along the local column
+  integer, dimension(2) :: alo, ahi
   integer :: a,b ! Starting block indices to feed to localToGlobalMap
   integer :: i,j ! Loop Variables
   integer :: extra ! Variable to denote irregular size in one dimension
@@ -238,24 +240,19 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
     secondDim = 0
   endif
 
-  ! Then we need to calculate the blocks along the local row and columns
-  ! so we can loop over them.
-  nrBlocks = len(arrinfo%local,1)/arrinfo%mb
-  ncBlocks = len(arrinfo%local,2)/arrinfo%nb
-  
   ! If we have extra rows and columns because the blocking factor didn't divide
   ! the dimensions of the large array equally, then we need to consider 1
   ! more block, which is smaller than usual.
-  if (arrinfo%extraBlockRows > 0) then
-    nrBlocks = nrBlocks + 1
+  if (arrinfo%extraRows > 0) then
+    arrinfo%nrblocks = arrinfo%nrblocks + 1
   endif
-  if (arrinfo%extraBlockCols > 0) then
-    ncBlocks = ncBlocks + 1
+  if (arrinfo%extraCols > 0) then
+    arrinfo%ncblocks = arrinfo%ncblocks + 1
   endif
 
   ! Now we loop over these blocks and record the results in atomPairs
-  do i=1, nrBlocks
-    do j=1, ncBlocks
+  do i=1, arrinfo%nrblocks
+    do j=1, arrinfo%ncblocks
       ! Need to set extra if we have an irregularly sized block that needs to
       ! be handled. If we are at the last block and there are extra rows or 
       ! columns we need to set extra to reflect that. Specifically for J
@@ -263,10 +260,10 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
       ! extra rows for this block. However, if extra was already set to 1
       ! then we have both extra rows and columns.
       extra = 0
-      if ((i == nrBlocks) .and. (arrinfo%extraBlockRows>0)) then
+      if ((i == arrinfo%nrblocks) .and. (arrinfo%extraRows>0)) then
         extra = 1
       endif
-      if ((j == ncBlocks) .and. (arrinfo%extraBlockCols>0)) then
+      if ((j == arrinfo%ncblocks) .and. (arrinfo%extraCols>0)) then
         if (extra == 0) then
           extra = 2
         elseif (extra == 1) then
@@ -324,19 +321,22 @@ function checkRectOverlap(lo1, hi1, lo2, hi2)
   implicit none
 
   ! Define this function
-  logical :: checkRangeOverlap
+  logical :: checkRectOverlap
 
   ! Define self and passed parameters
   integer, intent(in), dimension(2) :: lo1, hi1, lo2, hi2
 
-  if ( (lo1(2)=<hi2(2)) .and. (hi1(2)>=lo2(2)) .and. &
+  !if ( (lo1(2)=<hi2(2)) .and. (hi1(2)>=lo2(2)) .and. &
+  if ( (lo1(2)<=hi2(2)) .and. (hi1(2)>=lo2(2)) .and. &
      & (-lo1(1)>=-hi2(1)) .and. (-hi1(1)<=-lo2(1)) ) then
-    return .true.
+    checkRectOverlap = .true.
+    return
   endif
 
   ! else    
-  return .false.
-end function checkRangeOverlap
+  checkRectOverlap = .false.
+  return
+end function checkRectOverlap
 
 ! This subroutine finds the intersection of two rectangles if they overlap.
 ! Only use this subroutine if checkRectOverlap function returns true.
@@ -369,17 +369,21 @@ function inRectangle(i,j, loOvlp, hiOvlp)
   integer, intent(in) :: i,j
   integer, intent(in), dimension(2) :: loOvlp, hiOvlp
 
-  if ( ((i>=loOvlp[0]) .and. (i<=hiOvlp[0])) .and. &
-    &  ((j>=loOvlp[1]) .and. (j<=hiOvlp[1])) ) then
-    return 1
+  if ( ((i>=loOvlp(0)) .and. (i<=hiOvlp(0))) .and. &
+    &  ((j>=loOvlp(1)) .and. (j<=hiOvlp(1))) ) then
+    inRectangle = 1
+    return
   endif
   ! else
-  return 0
+  inRectangle = 0
+  return
 end function inRectangle
 
 ! This subroutine enumerates a range of atoms and calls addAtomPair to add
 ! a range of atomPairs to a list
-subroutine  addAtomPairRange(alo, ahi, atomPairs, atomTree)
+subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree)
+  use O_23bst, only: bst_node
+
   implicit none
 
   ! Define passed parameters
@@ -394,13 +398,15 @@ subroutine  addAtomPairRange(alo, ahi, atomPairs, atomTree)
 
   do i=alo(1),ahi(1)
     do j=alo(2),ahi(2)
-      addAtomPair(i,j, atomPairs, atomTree)
+      call addAtomPair(i,j, atomPairs, atomTree)
     enddo
   enddo
-end subroutine  addAtomPairRange
+end subroutine addAtomPairRange
 
 ! This subroutine appends an atom pair to the list of atomPairs
 subroutine addAtomPair(i, j, atomPairs, atomTree)
+  use O_23bst, only: bst_node
+
   implicit none
 
   ! Define passed parameters
@@ -453,77 +459,75 @@ end subroutine addAtomPair
 ! extra work will be done. It'll then copy the atomPairs structure into a 
 ! temporary structure, so it can reallocate the atomPairs and add the necessary
 ! atom ranges.
-subroutine testAtomDupe(vlo,vhi,clo,chi,cvlo,cvhi, atomPairs)
-  implicit none
-
-  ! Define passed parameters
-  integer, intent(in), dimension(2) :: alo, ahi
-  type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairs
-
-  ! Define local variables
-  integer, dimension(2) :: loOvlp1, hiOvlp1, loOvlp2, hiOvlp2
-  integer :: i,j
-  
-  ! Initialize intersections 
-  loOvlp1(:) = 0
-  hiOvlp1(:) = 0
-  loOvlp2(:) = 0
-  hiOvlp2(:) = 0
-
-  ! First add all vale atom pairs
-  do i=vlo(1), vhi(1)
-    do j=vlo(2), vhi(2)
-      addAtomPairs(i,j, atomPairs)
-    enddo
-  enddo
-
-  ! Check if vale and core overlap
-  if ( checkRectOverlap(vlo, vhi, clo, chi) ) then
-    call getOverlapRect(vlo, vhi, clo, chi, loOvlp1, hiOvlp1)
-  endif 
-
-  ! Now add the core pairs
-  do i=clo(1), clo(2)
-    do j=chi(1), chi(2)
-      if (.not. inRectangle(i,j, loOvlp1, hiOvlp1) then
-        addAtomPairs(i,j, atomPairs)
-      endif
-    enddo
-  enddo
-
-  ! Now in order to add the valeCore we need the overlaps of core with coreVale
-  ! and the overlap of vale with coreVale.
-  loOvlp1(:) = 0
-  hiOvlp1(:) = 0
-  ! Check if vale and coreVale overlap
-  if ( checkRectOverlap(vlo, vhi, cvlo, cvhi) ) then
-    call getOverlapRect(vlo, vhi, cvlo, cvhi, loOvlp1, hiOvlp1)
-  endif
-
-  ! Check of core and coreVale overlap
-  if ( checkRectOverlap(clo, chi, cvlo, cvhi) ) then
-    call getOverlapRect(clo, chi, cvlo, cvhi, loOvlp2, hiOvlp2)
-  endif
-  
-  ! Now we add the valeCore pairs
-  do i=vclo(1), vclo(2)
-    do j=vchi(1), vchi(2)
-      if ( .not. (inRectangle(i,j, loOvlp1, hiOvlp1) .or.
-           inRectangle(i,j, loOvlp2, hiOvlp2)) )then
-        addAtomPairs(i,j, atomPairs)
-      endif
-    enddo
-  enddo
-
-
-end subroutine testAtomDupe
+!subroutine testAtomDupe(vlo,vhi,clo,chi,cvlo,cvhi, atomPairs)
+!  implicit none
+!
+!  ! Define passed parameters
+!  integer, intent(in), dimension(2) :: alo, ahi
+!  type(AtomPair),  intent(inout), allocatable, dimension(:) :: atomPairs
+!
+!  ! Define local variables
+!  integer, dimension(2) :: loOvlp1, hiOvlp1, loOvlp2, hiOvlp2
+!  integer :: i,j
+!  
+!  ! Initialize intersections 
+!  loOvlp1(:) = 0
+!  hiOvlp1(:) = 0
+!  loOvlp2(:) = 0
+!  hiOvlp2(:) = 0
+!
+!  ! First add all vale atom pairs
+!  do i=vlo(1), vhi(1)
+!    do j=vlo(2), vhi(2)
+!      call addAtomPairs(i,j, atomPairs)
+!    enddo
+!  enddo
+!
+!  ! Check if vale and core overlap
+!  if ( checkRectOverlap(vlo, vhi, clo, chi) ) then
+!    call getOverlapRect(vlo, vhi, clo, chi, loOvlp1, hiOvlp1)
+!  endif 
+!
+!  ! Now add the core pairs
+!  do i=clo(1), clo(2)
+!    do j=chi(1), chi(2)
+!      if (.not. inRectangle(i,j, loOvlp1, hiOvlp1) then
+!        addAtomPairs(i,j, atomPairs)
+!      endif
+!    enddo
+!  enddo
+!
+!  ! Now in order to add the valeCore we need the overlaps of core with coreVale
+!  ! and the overlap of vale with coreVale.
+!  loOvlp1(:) = 0
+!  hiOvlp1(:) = 0
+!  ! Check if vale and coreVale overlap
+!  if ( checkRectOverlap(vlo, vhi, cvlo, cvhi) ) then
+!    call getOverlapRect(vlo, vhi, cvlo, cvhi, loOvlp1, hiOvlp1)
+!  endif
+!
+!  ! Check of core and coreVale overlap
+!  if ( checkRectOverlap(clo, chi, cvlo, cvhi) ) then
+!    call getOverlapRect(clo, chi, cvlo, cvhi, loOvlp2, hiOvlp2)
+!  endif
+!  
+!  ! Now we add the valeCore pairs
+!  do i=vclo(1), vclo(2)
+!    do j=vchi(1), vchi(2)
+!      if ( .not. (inRectangle(i,j, loOvlp1, hiOvlp1) .or.
+!           inRectangle(i,j, loOvlp2, hiOvlp2)) )then
+!        addAtomPairs(i,j, atomPairs)
+!      endif
+!    enddo
+!  enddo
+!end subroutine testAtomDupe
 
 ! Given an index gIndx from 1 to valedim/coredim. Return the atom indx needed
 ! so that the local array can be filled. whichCumul indicates whether we 
 ! should search through vale or core states.
 subroutine getAtoms(gIndx, atomIndx, whichCumul)
 
-  use O_AtomicSites, only: atomSites
+  use O_AtomicSites, only: atomSites, numAtomSites
 
   implicit none
 
@@ -531,12 +535,13 @@ subroutine getAtoms(gIndx, atomIndx, whichCumul)
   integer, intent(in) :: gIndx ! Global Area of interest
   integer, intent(out) :: atomIndx ! What we're looking for
   integer :: whichCumul ! Which cumul states we should look for 0=vale, 1=core
+  integer :: i
 
   if (whichCumul == 0) then
     if ( gIndx <= atomSites(1)%cumulValeStates ) then
-      atomIndx == 1
+      atomIndx = 1
     else
-      do i=1, len(atomSites)-1
+      do i=1, numAtomSites-1
         if (gIndx >= atomSites(i)%cumulValeStates .and. &
               & gIndx < atomSites(i+1)%cumulValeStates) then
           atomIndx = i 
@@ -546,9 +551,9 @@ subroutine getAtoms(gIndx, atomIndx, whichCumul)
 
   else ! whichCumul = 1
     if ( gIndx <= atomSites(1)%cumulCoreStates ) then
-      atomIndx == 1
+      atomIndx = 1
     else
-      do i=1, len(atomSites)-1
+      do i=1, numAtomSites-1
         if (gIndx >= atomSites(i)%cumulCoreStates .and. &
               & gIndx < atomSites(i+1)%cumulCoreStates) then
           atomIndx = i 
@@ -564,44 +569,44 @@ end subroutine getAtoms
 ! load balancing routines earlier in this code. But due to time constraints
 ! for myself, (James) I'm taking the previouosly mentioned route of 
 ! "this works and it was easy to implement really quick"
-subroutine writeResolve(toBalance, initialVal, finalVal,numProcs,tmpRank,valeDim)
-  implicit none
-  
-  integer, intent(in) :: toBalance,numProcs,tmpRank
-  integer, intent(in) :: valeDim
-  integer :: jobsPer, remainder
-  integer, intent(out) :: initialVal, finalVal
-  integer :: mpiRank, mpiSize, mpiErr
-
-!  call MPI_COMM_RANK(MPI_COMM_WORLD, mpiRank, mpiErr)
-  call MPI_COMM_SIZE(MPI_COMM_WORLD, mpiSize, mpiErr)
-!  mpiRank=tmpRank
-!  print *, 'VALEDIM',valeDim
-  jobsPer = int(toBalance / numProcs)
-  remainder = mod(toBalance,mpisize)
-
-  initialVal = (jobsPer * tmpRank) + 1
-  finalVal = (jobsPer * (tmpRank+1))
-  if (remainder>0) then
-    if (tmpRank < (mpiSize-1)) then
-      initialVal = initialVal + tmpRank
-      finalVal = finalVal + tmpRank + 1
-    endif
-    if (tmpRank==(mpiSize-1)) then
-      initialVal = initialVal + tmpRank
-      finalVal = valeDim
-    endif
-  endif
-!  if (tmpRank == (mpiSize-1) .and. remainder>0) then
-!    initialVal= initialVal+1
-!    finalVal = valeDim
+!subroutine writeResolve(toBalance, initialVal, finalVal,numProcs,tmpRank,valeDim)
+!  implicit none
+!  
+!  integer, intent(in) :: toBalance,numProcs,tmpRank
+!  integer, intent(in) :: valeDim
+!  integer :: jobsPer, remainder
+!  integer, intent(out) :: initialVal, finalVal
+!  integer :: mpiRank, mpiSize, mpiErr
+!
+!!  call MPI_COMM_RANK(MPI_COMM_WORLD, mpiRank, mpiErr)
+!  call MPI_COMM_SIZE(MPI_COMM_WORLD, mpiSize, mpiErr)
+!!  mpiRank=tmpRank
+!!  print *, 'VALEDIM',valeDim
+!  jobsPer = int(toBalance / numProcs)
+!  remainder = mod(toBalance,mpisize)
+!
+!  initialVal = (jobsPer * tmpRank) + 1
+!  finalVal = (jobsPer * (tmpRank+1))
+!  if (remainder>0) then
+!    if (tmpRank < (mpiSize-1)) then
+!      initialVal = initialVal + tmpRank
+!      finalVal = finalVal + tmpRank + 1
+!    endif
+!    if (tmpRank==(mpiSize-1)) then
+!      initialVal = initialVal + tmpRank
+!      finalVal = valeDim
+!    endif
 !  endif
-
-!    This is only needed for C type array indices. i.e. first index=0
-!    initialVal = initialVal - 1
-!    finalVal = finalVal - 1
-
-end subroutine writeResolve
+!!  if (tmpRank == (mpiSize-1) .and. remainder>0) then
+!!    initialVal= initialVal+1
+!!    finalVal = valeDim
+!!  endif
+!
+!!    This is only needed for C type array indices. i.e. first index=0
+!!    initialVal = initialVal - 1
+!!    finalVal = finalVal - 1
+!
+!end subroutine writeResolve
 
 ! This subroutine writes the valeVale matrix to disk, for the case that the
 ! orthogonaliztion is done. 
@@ -612,163 +617,163 @@ end subroutine writeResolve
 ! The reason this was done instead of PHDF5 was because of
 ! NFS (Network File System) writes being inneficcient under the PHDF5
 ! paradigm as of HDF5 version 1.8.12.
-subroutine writeValeVale(localVV, opCode, numKPoints, potDim, & 
-    & currPotTypeNumber,currAlphaNumber,valeDim)
-  use HDF5
-  use O_Kinds
-  use O_Constants
-  use O_SetupIntegralsHDF5
-  use O_PotTypes
-  
-  implicit none
-
-  integer, intent(in),dimension(:) :: ga_valeVale
-  integer, intent(in) :: opCode,valeDim
-  integer, intent(in) :: currPotTypeNumber,currAlphaNumber
-  integer, intent(in) :: numKPoints, potDim
-  integer, dimension(2) :: hi, lo, blockDims, numBlocks
-  integer :: mpiRank, mpiSize, mpiErr, hdferr
-  complex (kind=double), allocatable, dimension(:,:) :: valeValeGA
-  real    (kind=double), allocatable, dimension(:,:) :: diskVV
-  integer :: i,j,k,m,x,y, xDimCnt, yDimCnt
-  integer(hid_t) :: memspace_dsid
-  integer(hid_t), dimension(numKPoints,potDim) :: datasetToWrite_did
-  integer(hsize_t), dimension(2) :: hslabCount,hslabStart,dims
-  integer :: valeBlockDim
-  integer :: minDim,maxDim,tmpRank
-  ! Define small threshold for eliminating resultant values
-  real (kind=double) :: smallThresh10
-
-  smallThresh10 = real(1.0d-10,double)
-
-  call MPI_Comm_rank(MPI_COMM_WORLD, mpiRank, mpiErr)
-  call MPI_Comm_size(MPI_COMM_WORLD, mpiSize, mpiErr)
-
-  select case (opCode)
-  case (1)
-    datasetToWrite_did(:,1) = atomOverlap_did(:)
-  case (2)
-    datasetToWrite_did(:,1) = atomKEOverlap_did(:)
-  case (3)
-    datasetToWrite_did(:,1) = atomNucOverlap_did(:)
-  case (4)
-    datasetToWrite_did(:,:) = atomPotOverlap_did(:,:)
-  case default
-    print *, "wrong opCode passed to writeValeVale"
-    stop
-  end select
-  
-  if (valeDim/mpiSize<1) then
-    valeBlockDim=valeDim
-  elseif(valeDim/mpiSize>1 .and. mod(valeDim,mpiSize)/=0) then
-    valeBlockDim=(valeDim/mpiSize) + 1
-  else
-    valeBlockDim=valeDim/mpiSize
-  endif
-  blockDims(1) = valeBlockDim
-  blockDims(2) = valeBlockDim
-  if (mod(valeDim,blockDims(1)) > 0) then
-    numBlocks(1) = int(valeDim/blockDims(1)) + 1
-  else
-    numBlocks(1) = int(valeDim/blockDims(1))
-  endif
-  numBlocks(2) = numBlocks(1)
-!  print *, "blockDims: ", blockDims
-!  print *, "numBlocks: ", numBlocks(1)
-!  print *, "Divide:    ", valeDim/blockDims(1)
-!  print *, "mod:       ", mod(valeDim,blockDims(1))
-
-  do i=1, numKPoints
-    x=0
-    y=0
-    do m=1,numBlocks(1)**2
-      if (x /=  numBlocks(1)-1 .and. y /= numBlocks(2)-1) then
-        lo(1) = ((x)*blockDims(1))+1
-        lo(2) = ((y)*blockDims(2))+1
-        hi(1) = (x+1)*blockDims(1)
-        hi(2) = (y+1)*blockDims(2)
-      elseif (x == numBlocks(1)-1 .and. y /= numBlocks(2)-1) then
-        lo(1) = valeDim-blockDims(1)+1
-        lo(2) = ((y)*blockDims(2))+1
-        hi(1) = valeDim
-        hi(2) = (y+1)*blockDims(2)
-      elseif (x /= numBlocks(1)-1 .and. y == numBlocks(2)-1) then
-        lo(1) = ((x)*blockDims(1))+1
-        lo(2) = valeDim-blockDims(2)+1
-        hi(1) = (x+1)*blockDims(1)
-        hi(2) = valeDim
-      else
-        lo(1) = valeDim-blockDims(1)+1
-        lo(2) = valeDim-blockDims(2)+1
-        hi(1) = valeDim
-        hi(2) = valeDim
-      endif
-      
-      allocate(valeValeGA(hi(1)-lo(1)+1, hi(2)-lo(2)+1))
-      allocate(diskVV(hi(1)-lo(1)+1, hi(2)-lo(2)+1))
-      call nga_get(ga_valeVale(i),lo,hi,valeValeGA, size(valeValeGA,1))
-       
-      yDimCnt=lo(2)
-      do k=1,size(valeValeGA,2)
-        xDimCnt=lo(1)
-        do j=1,size(valeValeGA,1)
-          if (yDimCnt<xDimCnt) then
-            diskVV(j,k) = aimag(conjg(valeValeGA(j,k)))
-          else
-            diskVV(j,k) = real(valeValeGA(j,k))
-          endif
-          xDimCnt = xDimCnt + 1
-        enddo
-        yDimCnt = yDimCnt + 1
-      enddo
-      
-      do k=1,size(diskVV,2)
-        do j=1,size(diskVV,1)
-         if(abs(diskVV(j,k))<smallThresh10) then
-            diskVV(j,k) = 0.0_double
-         endif
-        enddo
-      enddo
-
-      hslabStart(1) = lo(1)-1
-      hslabStart(2) = lo(2)-1
-      
-      hslabCount(1)=(hi(1)-lo(1))+1
-      hslabCount(2)=(hi(2)-lo(2))+1
-      call h5screate_simple_f(2,hslabCount,memspace_dsid,hdferr)
-        
-      ! define the hyperslab to be written to
-      call h5sselect_hyperslab_f(valeVale_dsid,H5S_SELECT_SET_F, &
-        & hslabStart,hslabCount,hdferr) 
-      select case (opCode)
-      case(1:3)
-        ! Write slabs to disk
-        call h5dwrite_f(datasetToWrite_did(i,1),H5T_NATIVE_DOUBLE, &
-          & diskVV(:,:), hslabCount, hdferr, &
-            & file_space_id=valeVale_dsid, mem_space_id=memspace_dsid)
-      case(4)
-        ! Write slabs to disk
-        call h5dwrite_f(datasetToWrite_did(i, &
-        & potTypes(currPotTypeNumber)%cumulAlphaSum+currAlphaNumber), &
-        & H5T_NATIVE_DOUBLE, diskVV(:,:), hslabCount, &
-        & hdferr, file_space_id=valeVale_dsid, &
-        & mem_space_id=memspace_dsid)
-      case default
-        print *, "shits fucked up yo"
-      end select
-
-      x=x+1
-      if (x==numBlocks(1)) then
-        y = y +1
-        x = 0
-      endif
-
-      deallocate(valeValeGA)
-      deallocate(diskVV)
-      call h5sclose_f(memspace_dsid,hdferr)
-    enddo
-  enddo
-
-end subroutine writeValeVale
+!subroutine writeValeVale(localVV, opCode, numKPoints, potDim, & 
+!    & currPotTypeNumber,currAlphaNumber,valeDim)
+!  use HDF5
+!  use O_Kinds
+!  use O_Constants
+!  use O_SetupIntegralsHDF5
+!  use O_PotTypes
+!  
+!  implicit none
+!
+!  integer, intent(in),dimension(:) :: ga_valeVale
+!  integer, intent(in) :: opCode,valeDim
+!  integer, intent(in) :: currPotTypeNumber,currAlphaNumber
+!  integer, intent(in) :: numKPoints, potDim
+!  integer, dimension(2) :: hi, lo, blockDims, numBlocks
+!  integer :: mpiRank, mpiSize, mpiErr, hdferr
+!  complex (kind=double), allocatable, dimension(:,:) :: valeValeGA
+!  real    (kind=double), allocatable, dimension(:,:) :: diskVV
+!  integer :: i,j,k,m,x,y, xDimCnt, yDimCnt
+!  integer(hid_t) :: memspace_dsid
+!  integer(hid_t), dimension(numKPoints,potDim) :: datasetToWrite_did
+!  integer(hsize_t), dimension(2) :: hslabCount,hslabStart,dims
+!  integer :: valeBlockDim
+!  integer :: minDim,maxDim,tmpRank
+!  ! Define small threshold for eliminating resultant values
+!  real (kind=double) :: smallThresh10
+!
+!  smallThresh10 = real(1.0d-10,double)
+!
+!  call MPI_Comm_rank(MPI_COMM_WORLD, mpiRank, mpiErr)
+!  call MPI_Comm_size(MPI_COMM_WORLD, mpiSize, mpiErr)
+!
+!  select case (opCode)
+!  case (1)
+!    datasetToWrite_did(:,1) = atomOverlap_did(:)
+!  case (2)
+!    datasetToWrite_did(:,1) = atomKEOverlap_did(:)
+!  case (3)
+!    datasetToWrite_did(:,1) = atomNucOverlap_did(:)
+!  case (4)
+!    datasetToWrite_did(:,:) = atomPotOverlap_did(:,:)
+!  case default
+!    print *, "wrong opCode passed to writeValeVale"
+!    stop
+!  end select
+!  
+!  if (valeDim/mpiSize<1) then
+!    valeBlockDim=valeDim
+!  elseif(valeDim/mpiSize>1 .and. mod(valeDim,mpiSize)/=0) then
+!    valeBlockDim=(valeDim/mpiSize) + 1
+!  else
+!    valeBlockDim=valeDim/mpiSize
+!  endif
+!  blockDims(1) = valeBlockDim
+!  blockDims(2) = valeBlockDim
+!  if (mod(valeDim,blockDims(1)) > 0) then
+!    numBlocks(1) = int(valeDim/blockDims(1)) + 1
+!  else
+!    numBlocks(1) = int(valeDim/blockDims(1))
+!  endif
+!  numBlocks(2) = numBlocks(1)
+!!  print *, "blockDims: ", blockDims
+!!  print *, "numBlocks: ", numBlocks(1)
+!!  print *, "Divide:    ", valeDim/blockDims(1)
+!!  print *, "mod:       ", mod(valeDim,blockDims(1))
+!
+!  do i=1, numKPoints
+!    x=0
+!    y=0
+!    do m=1,numBlocks(1)**2
+!      if (x /=  numBlocks(1)-1 .and. y /= numBlocks(2)-1) then
+!        lo(1) = ((x)*blockDims(1))+1
+!        lo(2) = ((y)*blockDims(2))+1
+!        hi(1) = (x+1)*blockDims(1)
+!        hi(2) = (y+1)*blockDims(2)
+!      elseif (x == numBlocks(1)-1 .and. y /= numBlocks(2)-1) then
+!        lo(1) = valeDim-blockDims(1)+1
+!        lo(2) = ((y)*blockDims(2))+1
+!        hi(1) = valeDim
+!        hi(2) = (y+1)*blockDims(2)
+!      elseif (x /= numBlocks(1)-1 .and. y == numBlocks(2)-1) then
+!        lo(1) = ((x)*blockDims(1))+1
+!        lo(2) = valeDim-blockDims(2)+1
+!        hi(1) = (x+1)*blockDims(1)
+!        hi(2) = valeDim
+!      else
+!        lo(1) = valeDim-blockDims(1)+1
+!        lo(2) = valeDim-blockDims(2)+1
+!        hi(1) = valeDim
+!        hi(2) = valeDim
+!      endif
+!      
+!      allocate(valeValeGA(hi(1)-lo(1)+1, hi(2)-lo(2)+1))
+!      allocate(diskVV(hi(1)-lo(1)+1, hi(2)-lo(2)+1))
+!      call nga_get(ga_valeVale(i),lo,hi,valeValeGA, size(valeValeGA,1))
+!       
+!      yDimCnt=lo(2)
+!      do k=1,size(valeValeGA,2)
+!        xDimCnt=lo(1)
+!        do j=1,size(valeValeGA,1)
+!          if (yDimCnt<xDimCnt) then
+!            diskVV(j,k) = aimag(conjg(valeValeGA(j,k)))
+!          else
+!            diskVV(j,k) = real(valeValeGA(j,k))
+!          endif
+!          xDimCnt = xDimCnt + 1
+!        enddo
+!        yDimCnt = yDimCnt + 1
+!      enddo
+!      
+!      do k=1,size(diskVV,2)
+!        do j=1,size(diskVV,1)
+!         if(abs(diskVV(j,k))<smallThresh10) then
+!            diskVV(j,k) = 0.0_double
+!         endif
+!        enddo
+!      enddo
+!
+!      hslabStart(1) = lo(1)-1
+!      hslabStart(2) = lo(2)-1
+!      
+!      hslabCount(1)=(hi(1)-lo(1))+1
+!      hslabCount(2)=(hi(2)-lo(2))+1
+!      call h5screate_simple_f(2,hslabCount,memspace_dsid,hdferr)
+!        
+!      ! define the hyperslab to be written to
+!      call h5sselect_hyperslab_f(valeVale_dsid,H5S_SELECT_SET_F, &
+!        & hslabStart,hslabCount,hdferr) 
+!      select case (opCode)
+!      case(1:3)
+!        ! Write slabs to disk
+!        call h5dwrite_f(datasetToWrite_did(i,1),H5T_NATIVE_DOUBLE, &
+!          & diskVV(:,:), hslabCount, hdferr, &
+!            & file_space_id=valeVale_dsid, mem_space_id=memspace_dsid)
+!      case(4)
+!        ! Write slabs to disk
+!        call h5dwrite_f(datasetToWrite_did(i, &
+!        & potTypes(currPotTypeNumber)%cumulAlphaSum+currAlphaNumber), &
+!        & H5T_NATIVE_DOUBLE, diskVV(:,:), hslabCount, &
+!        & hdferr, file_space_id=valeVale_dsid, &
+!        & mem_space_id=memspace_dsid)
+!      case default
+!        print *, "shits fucked up yo"
+!      end select
+!
+!      x=x+1
+!      if (x==numBlocks(1)) then
+!        y = y +1
+!        x = 0
+!      endif
+!
+!      deallocate(valeValeGA)
+!      deallocate(diskVV)
+!      call h5sclose_f(memspace_dsid,hdferr)
+!    enddo
+!  enddo
+!
+!end subroutine writeValeVale
 
 end module O_ParallelSetup

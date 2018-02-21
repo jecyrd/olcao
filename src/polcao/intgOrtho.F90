@@ -349,6 +349,7 @@ subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo, kp)
    real (kind=double) :: negligLimit
    negligLimit = real(1.0D-10,double)
 
+   ! Change to pzhemm
    call pzgemm ('N','N',valeDim,valeDim,coreDim,(1.0_double,0.0_double),&
          & vcTempInfo%local(:,:,kp),0,0,vcTempInfo%desc, &
          & cvInfo%local(:,:,kp),0,0,cvInfo%desc, (1.0_double,0.0_double), &
@@ -512,6 +513,7 @@ subroutine makeValeValeGamma (valeDim,coreDim,descriptVC_temp,decriptCV,&
    real (kind=double) :: negligLimit
    negligLimit = real(1.0D-10,double)
 
+   ! Change to pdsymm
    call pdgemm ('N','N',valeDim,valeDim,coreDim,1.0_double,localVC_temp,0,0,&
          & descriptVC_temp,localCV,0,0,descriptCV,1.0_double,localVV,0,0,&
          & descriptVV)

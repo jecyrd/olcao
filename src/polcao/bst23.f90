@@ -12,7 +12,7 @@ module O_23bst
     type(bst_node), pointer :: lchild, mlchild, mrchild, rchild
     type(bst_node), pointer :: parent
   end type bst_node
-  
+ 
 contains
 
 subroutine tree_init(tree, val)

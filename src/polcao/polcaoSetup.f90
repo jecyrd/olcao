@@ -577,4 +577,94 @@ end subroutine getAtoms
 !  enddo
 !end subroutine testAtomDupe
 
+! This subroutine handles writing out the vale vale matrix to disk.
+! It is only to be done by process 0.
+subroutine writeValeVale(arrinfo, blcsinfo, file_id, dset_id, &
+                       & dspace_id, mpirank)
+  use HDF5
+
+  use O_Kinds
+  use O_Parallel
+
+  implicit none
+  
+  ! Define passed parameters
+  type(ArrayInfo) :: arrinfo
+  type(BlacsInfo) :: blcsinfo
+  integer(HID_T) :: file_id
+  integer(HID_T) :: dset_id
+  integer(HID_T) :: dspace_id
+  integer :: mpirank
+
+  ! Define local variables
+  integer(hsize_t), dimension(3) :: hslabCount, hslabStart
+  integer(hid_t) :: memspace_dsid
+  integer :: i, j, k, l, x, y, a,b, hdferr
+  integer, dimension(2) :: lo,hi
+
+  real(kind=double), allocatable, dimension(:,:,:) :: dataOut
+
+  ! Set the third component to numkp rather than setting in loop every time
+  hslabCount(3) = size(arrinfo%local,3)
+
+  ! Allocate space for single blocks
+  allocate(dataOut(arrinfo%mb, arrinfo%nb, hslabCount(3)))
+
+  do i=0,arrinfo%nrblocks-1
+    do j=0,arrinfo%ncblocks-1
+      if ((arrinfo%extraRows>0) .and. (i==arrinfo%nrblocks-1) .and. &
+        & (arrinfo%extraCols>0) .and. (j==arrinfo%ncblocks-1)) then
+        hslabCount(1) = arrinfo%extraRows
+        hslabCount(2) = arrinfo%extraCols
+      else if ((arrinfo%extraRows>0) .and. (i==arrinfo%nrblocks-1)) then
+        hslabCount(1) = arrinfo%extraRows
+        hslabCount(2) = arrinfo%nb
+      else if ((arrinfo%extraCols>0) .and. (j==arrinfo%ncblocks-1)) then
+        hslabCount(1) = arrinfo%mb
+        hslabCount(2) = arrinfo%extraCols
+      else
+        hslabCount(1) = arrinfo%mb
+        hslabCount(2) = arrinfo%nb
+      endif
+
+      a = i*arrinfo%mb
+      b = j*arrinfo%nb
+      call localToGlobalMap(a,b, lo, hi, arrinfo, blcsinfo, 0)
+      hslabStart(1) = lo(1)
+      hslabStart(2) = lo(2)
+      hslabStart(3) = 1
+
+      call h5screate_simple_f(3, hslabCount, memspace_dsid, hdferr)
+    
+      ! Define hyperslab to be written to
+      call h5sselect_hyperslab_f(dspace_id, H5S_SELECT_SET_F, hslabStart, &
+        & hslabCount, hdferr)
+
+      ! Need to prepare the data so that complex parts are on saved on the
+      ! bottom half of matrix, and real parts on the top half.
+      x=1
+      do k=hslabStart(1),(hslabStart(1)+hslabCount(1)-1)
+        y=1
+        do l=hslabStart(2),(hslabStart(2)+hslabCount(2)-1)
+          if (l>=k) then ! top half
+            dataOut(x,y,:) = real(arrinfo%local(a+x,b+y,:))
+          else ! Bottom half
+            dataOut(x,y,:) = aimag(arrinfo%local(a+x,b+y,:))
+          endif
+          y = y + 1
+        enddo
+        x = x + 1
+      enddo
+
+      ! write slab to disk
+      call h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE, &
+        & dataOut(1:hslabCount(1),1:hslabCount(2), :), hslabCount, hdferr, &
+        & file_space_id=dspace_id, mem_space_id=memspace_dsid)
+    enddo
+  enddo
+
+  deallocate(dataOut)
+
+end subroutine writeValeVale
+
 end module O_ParallelSetup

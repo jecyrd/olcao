@@ -145,6 +145,9 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
    ! We need to allocate our first atomPair element
    call initAtomPair(atomPairs)
 
+   ! Need to intitalize tree structure here
+   call tree_init(atomPairTree)
+
    ! Now we can go about figuring out what atom pairs we need to do
    call getAtomPairs(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, atomPairs)
 

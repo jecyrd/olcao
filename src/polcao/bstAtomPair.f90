@@ -1,49 +1,264 @@
-! Reference implementation of a 2-3 tree.
+! 2-3 tree implementation specifically for keeping track of atom pairs, and
+! the local blocks that corespond to those pairs.
+! This is all to reduce the amount of work and complexity when it comes time
+! to save the currentPair in the local arrays.
 ! Author: James Currie
-! Email: <jecyrd@mail.umkc.edu>
-module O_23bst
+! email: <jecyrd@mail.umkc.edu>
+module O_bstAtomPair
   implicit none
 
   public 
-  ! For our 2-3 tree we can use node in 2 ways. As a 1-node we set the value of
-  ! lval, but hval is set to -1.  As a 2-node, both lval and hval have
-  ! non-negative values.
-  type bst_node
-    integer :: lval
-    integer :: mval
-    integer :: hval
-    type(bst_node), pointer :: lchild, mlchild, mrchild, rchild
-    type(bst_node), pointer :: parent
-  end type bst_node
- 
+  
+  ! For the purposes of setup we need a special bst_atom_pair_node that will 
+  ! work with a set of overloaded routines that exist in the reference
+  ! implementation in bst23.f90. However we need to have each value, we need
+  ! to have a data structure that holds the cantor value, as well as the 
+  ! local blocks that correspond to that atom pair. Rather than rewrite
+  ! existing types and routines in bst23.f90 we will declare a new type
+  ! to operate on. As well as overloaded operators for the comparison
+  ! functions on our new types. This'll keep changes small from the reference 
+  ! implementation.
+  type bst_atom_pair_node
+    type(tree_vals), pointer :: lval
+    type(tree_vals), pointer :: mval
+    type(tree_vals), pointer :: hval
+    type(bst_atom_pair_node), pointer :: lchild, mlchild, mrchild, rchild
+    type(bst_atom_Pair), pointer :: parent
+  end type bst_atom_pair_node
+
+  ! Data structure to replace the integers in the reference implementation of
+  ! the bst
+  type tree_vals
+    integer :: val
+    type(lBlockCoords), pointer :: vvblocks
+    type(lBlockCoords), pointer :: cvblocks
+    type(lBlockCoords), pointer :: ccblocks
+  end type tree_vals
+
+  ! New linked list type for readability, to be used with tree above.
+  type lBlockCoords
+    integer :: blockrow
+    integer :: blockcol
+    type(lBlockCoords), pointer :: next
+  end type lBlockCoords
+
+  ! Define overload for greater than when using tree_vals type
+  interface operator(>)
+    function bst_gt(tval1, tval2)
+      implicit none
+
+      ! Define passed parameters
+      type(tree_vals), pointer :: tval1, tval2
+
+      ! Define function return
+      logical :: bst_gt
+
+      if (tval1=>val > tval2=>val) then
+        return .true.
+      else
+        return .false.
+      endif
+    end function bst_gt
+    
+    function bst_val_gt(tval1, tval2)
+      implicit none
+
+      ! Define passed parameters
+      type(tree_vals), pointer :: tval1
+      integer, intent(in) :: tval2
+
+      ! Define function return
+      logical :: bst_gt
+
+      if (tval1=>val > tval2) then
+        return .true.
+      else
+        return .false.
+      endif
+    end function bst_val_gt
+    
+    function val_bst_gt(tval1, tval2)
+      implicit none
+
+      ! Define passed parameters
+      integer, intent(in) :: tval1
+      type(tree_vals), pointer :: tval2
+
+      ! Define function return
+      logical :: bst_gt
+
+      if (tval1 > tval2=>val) then
+        return .true.
+      else
+        return .false.
+      endif
+    end function val_bst_gt
+  end interface
+
+  ! Define overload for less than when using tree_vals type
+  interface operator(<)
+    function bst_lt(tval1, tval2)
+      implicit none
+
+      ! Define passed parameters
+      type(tree_vals), pointer :: tval1, tval2
+
+      ! Define function return
+      logical :: bst_gt
+
+      if (tval1=>val < tval2=>val) then
+        return .true.
+      else
+        return .false.
+      endif
+    end function bst_lt
+
+    function bst_val_lt(tval1, tval2)
+      implicit none
+
+      ! Define passed parameters
+      type(tree_vals), pointer :: tval1
+      integer, intent(in) :: tval2
+
+      ! Define function return
+      logical :: bst_lt
+
+      if (tval1=>val < tval2) then
+        return .true.
+      else
+        return .false.
+      endif
+    end function bst_val_lt
+    
+    function val_bst_lt(tval1, tval2)
+      implicit none
+
+      ! Define passed parameters
+      integer, intent(in) :: tval1
+      type(tree_vals), pointer :: tval2
+
+      ! Define function return
+      logical :: bst_gt
+
+      if (tval1 < tval2=>val) then
+        return .true.
+      else
+        return .false.
+      endif
+    end function val_bst_lt
+  end interface
+  
+  ! Define overload for equal to when using tree_vals type
+  interface operator(==)
+    function bst_eq(tval1, tval2)
+      implicit none
+
+      ! Define passed parameters
+      type(tree_vals), pointer :: tval1, tval2
+
+      ! Define function return
+      logical :: bst_gt
+
+      if (tval1=>val == tval2=>val) then
+        return .true.
+      else
+        return .false.
+      endif
+    end function bst_eq
+
+    function bst_val_eq(tval1, tval2)
+      implicit none
+
+      ! Define passed parameters
+      type(tree_vals), pointer :: tval1
+      integer, intent(in) :: tval2
+
+      ! Define function return
+      logical :: bst_gt
+
+      if (tval1=>val == tval2) then
+        return .true.
+      else
+        return .false.
+      endif
+    end function bst_val_eq
+    
+    function val_bst_eq(tval1, tval2)
+      implicit none
+
+      ! Define passed parameters
+      integer, intent(in) :: tval1
+      type(tree_vals), pointer :: tval2
+
+      ! Define function return
+      logical :: bst_gt
+
+      if (tval1 == tval2=>val) then
+        return .true.
+      else
+        return .false.
+      endif
+    end function val_bst_eq
+  end interface
 contains
 
+! Subroutine to initialize the lBlockCoords data structure inside tree_vals
+subroutine initBlockCoords(node)
+  implicit none
+
+  ! Define passed parameters
+  allocate(lBlockCoords)
+  type(lBlockCoords), pointer :: node
+  node%next => null()
+  node%blockrow = -1
+  node%blockcol = -1
+end subroutine initBlockCoords
+
+! Subroutine to deallocate our lblockCoords list
+recursive subroutine destroyBlockCoordsList(root)
+  implicit none
+
+  ! Define passed parameters
+  type (lBlockCoords), pointer :: root
+  if (assosciated(root%next)) then
+    call destroyBlockCoordsList(root%next)
+  endif
+
+  deallocate(root)
+end subroutine destroyBlockCoordsList
+
+! Subroutine to initialize a new tree node
 subroutine tree_init(tree, val)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: tree
+  type(bst_atom_pair_node), pointer :: tree
   integer, intent(in) :: val
 
   allocate(tree)
+  tree%lval => null()
+  tree%hval => null()
+  tree%mval => null()
+
   tree%lchild =>  null()
   tree%mlchild => null()
   tree%mrchild => null()
   tree%rchild => null()
   tree%parent => null()
-  tree%lval = val
-  tree%hval = -1
-  tree%mval = -1
+ 
+  call initBlockCoords(tree%vvblocks)
+  call initBlockCoords(tree%cvblocks)
+  call initBlockCoords(tree%ccblocks)
 end subroutine tree_init
 
 recursive subroutine tree_destroy(tree)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: tree
+  type(bst_atom_pair_node), pointer :: tree
 
   ! Define local variables
-  type(bst_node), pointer :: rchild, mlchild, lchild
+  type(bst_atom_pair_node), pointer :: rchild, mlchild, lchild
 
   rchild => tree%rchild
   mlchild => tree%mlchild
@@ -61,6 +276,9 @@ recursive subroutine tree_destroy(tree)
     call tree_destroy(rchild)
   endif
 
+  call destroyBlockCoordsList(tree%vvblocks)
+  call destroyBlockCoordsList(tree%cvblocks)
+  call destroyBlockCoordsList(tree%ccblocks)
   deallocate(tree)
 end subroutine tree_destroy
 
@@ -68,7 +286,7 @@ subroutine tree_destroyNode(node)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: node
+  type(bst_atom_pair_node), pointer :: node
 
   deallocate(node)
 end subroutine tree_destroyNode
@@ -77,7 +295,7 @@ recursive subroutine tree_search(root, val, exists)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: root
+  type(bst_atom_pair_node), pointer :: root
   integer, intent(in) :: val
   logical, intent(out) :: exists
 
@@ -109,7 +327,7 @@ subroutine tree_nodeType(node, ntype)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: node
+  type(bst_atom_pair_node), pointer :: node
   integer, intent(out) :: ntype
 
   if ( (node%hval > -1) .and. (node%mval > -1) ) then
@@ -125,7 +343,7 @@ subroutine tree_moveLMR(parent, val, lmr)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: parent
+  type(bst_atom_pair_node), pointer :: parent
   integer, intent(in) :: val
   integer, intent(out) :: lmr
 
@@ -161,7 +379,7 @@ subroutine tree_LMR(parent, val, lmr)
 
 
   ! Define passed parameters
-  type(bst_node), pointer :: parent
+  type(bst_atom_pair_node), pointer :: parent
   integer, intent(in) :: val
   integer, intent(out) :: lmr
 
@@ -198,7 +416,7 @@ recursive subroutine tree_insert(node, val)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: node
+  type(bst_atom_pair_node), pointer :: node
   integer, intent(in) :: val
 
   ! Define local variables
@@ -262,11 +480,11 @@ subroutine tree_split(node)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: node
+  type(bst_atom_pair_node), pointer :: node
 
   ! Define local variables
-  type(bst_node), pointer :: parent
-  type(bst_node), pointer :: newNode
+  type(bst_atom_pair_node), pointer :: parent
+  type(bst_atom_pair_node), pointer :: newNode
   integer :: ntype
   integer :: lmr
   logical :: isLeaf
@@ -353,7 +571,7 @@ subroutine tree_moveMvalUp(node)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: node
+  type(bst_atom_pair_node), pointer :: node
 
   ! Define local variables
   integer :: ntype
@@ -384,11 +602,11 @@ subroutine tree_splitRoot(node)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: node
+  type(bst_atom_pair_node), pointer :: node
 
   ! Define local variables
-  type(bst_node), pointer :: parent
-  type(bst_node), pointer :: newNode
+  type(bst_atom_pair_node), pointer :: parent
+  type(bst_atom_pair_node), pointer :: newNode
   integer :: lmr
   logical :: isleaf
 
@@ -428,11 +646,11 @@ subroutine tree_threeToFour(node, val)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: node
+  type(bst_atom_pair_node), pointer :: node
   integer, intent(in) :: val
 
   ! Define local variables
-  type(bst_node), pointer :: tempNode
+  type(bst_atom_pair_node), pointer :: tempNode
   logical :: isLeaf
   integer :: tempVal
 
@@ -484,7 +702,7 @@ subroutine tree_twoToThree(node, val)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: node
+  type(bst_atom_pair_node), pointer :: node
   integer, intent(in) :: val
 
   ! Define local variables
@@ -518,7 +736,7 @@ subroutine tree_isLeaf(node, isLeaf)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: node
+  type(bst_atom_pair_node), pointer :: node
   logical, intent(out) :: isLeaf
 
   isLeaf = .true.
@@ -532,12 +750,12 @@ subroutine tree_addNode(parent, val, lmr)
   implicit none
   
   ! Define passed parameters
-  type(bst_node), pointer :: parent
+  type(bst_atom_pair_node), pointer :: parent
   integer, intent(in) :: val
   integer, intent(in) :: lmr
 
   ! Define local variables
-  type(bst_node), pointer :: newChild
+  type(bst_atom_pair_node), pointer :: newChild
 
   call tree_init(newChild, val)
 
@@ -557,7 +775,7 @@ subroutine tree_printTree(tree)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: tree
+  type(bst_atom_pair_node), pointer :: tree
 
   ! Define local variables
   logical :: isLeaf
@@ -572,7 +790,7 @@ recursive subroutine tree_printRecur(tree)
   implicit none
 
   ! Define passed parameters
-  type(bst_node), pointer :: tree
+  type(bst_atom_pair_node), pointer :: tree
   
   if (associated(tree%lchild)) then
     print *, "lchild", tree%lchild%lval,tree%lchild%mval, tree%lchild%hval
@@ -599,4 +817,4 @@ recursive subroutine tree_printRecur(tree)
 
 end subroutine tree_printRecur
 
-end module O_23bst
+end module O_bstAtomPair

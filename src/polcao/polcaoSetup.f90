@@ -11,69 +11,7 @@ module O_ParallelSetup
     type(atomPair), pointer :: next
   end type AtomPair
 
-  ! For the purposes of setup we need a special bst_atom_pair that will work with
-  ! the existing subroutines in bst23.f90, however we need to have each node
-  ! store the local blocks that correspond to atom pairs. Rather than rewrite
-  ! existing types and routines int he bst23.f90 we will declare a new type
-  ! to operate on. Additionally we will declare a new linked list type for
-  ! readability.
-  ! This is all to reduce the amount of work and complexity when it comes time
-  ! to save the currentPair in the local arrays.
-  type bst_atom_pair
-    integer :: lval
-    integer :: mval
-    integer :: hval
-    type(bst_atom_pair), pointer :: lchild, mlchild, mrchild, rchild
-    type(bst_atom_Pair), pointer :: parent
-    type(lBlockCoords), pointer :: vvblocks
-    type(lBlockCoords), pointer :: cvblocks
-    type(lBlockCoords), pointer :: ccblocks
-  end type bst_atom_pair
-
-  ! New linked list type for readability, to be used with tree above.
-  type lBlockCoords
-    integer :: blockrow
-    integer :: blockcol
-    type(lBlockCoords), pointer :: next
-  end type lBlockCoords
-  
-
 contains
-! Subroutine that initializes our special tree type
-subroutine atom_pair_tree_init(tree,val)
-  implicit none
-
-  type(bst_atom_pair), pointer :: tree
-  integer, intent(in) :: val
-
-  allocate(tree)
-  tree%lval = val
-  tree%hval = -1
-  tree%mval = -1
-
-  tree%lchild => null()
-  tree%mlchild => null()
-  tree%mrchild => null()
-  tree%rchild => null()
-  tree%parent => null()
-
-  tree%vvblocks => null()
-  tree%cvblocks => null()
-  tree%ccblocks => null()
-end subroutine atom_pair_tree_init
-
-! Subroutine to initialized the lists contained in the atom pair bst.
-subroutine initBlockCoords(node)
-  implicit none
-
-  ! Define passed parameters
-  type(lBlockCoords), pointer :: node
-
-  allocate(lBlockCoords)
-  node%next => null()
-  node%blockrow = -1
-  node%blockcol = -1
-end subroutine initBlockCoords
 
 ! This subroutine initializes a new element in the atomPair linked list
 subroutine initAtomPair(atomNode)
@@ -301,9 +239,9 @@ function inRectangle(i,j, loOvlp, hiOvlp)
 end function inRectangle
 
 
-subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs)
+subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs, atomTree)
   use O_Parallel, only: ArrayInfo, BlacsInfo
-  use O_23bst, only: bst_atom_pair, tree_init, tree_destroy
+  use O_23bst, only: tree_init, tree_destroy
 
   implicit none
  
@@ -311,14 +249,16 @@ subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs)
   type(ArrayInfo), intent(inout) :: vvinfo, ccinfo, cvinfo
   type(BlacsInfo), intent(inout) :: blcsinfo
   type(AtomPair), pointer :: atomPairs
+  type(bst_node), pointer, intent(inout) :: atomTree ! 2-3 tree to keep 
+                                           ! us from having duplicate atoms, 
+                                           ! and to keep track of the local 
+                                           ! blocks the atom pairs belong to
 
   ! Define local variables
   integer, dimension(2) :: vvlo, vvhi
   integer, dimension(2) :: cclo, cchi
   integer, dimension(2) :: cvlo, cvhi
 
-  type(bst_atom_pair), pointer :: atomTree ! 2-3 tree to keep us from having 
-                                      ! duplicate atoms
 
   ! Need to figure out a better way to initialize the atomTree but for now
   ! we're just gonna put a zero in it, representing cantor pairing of 0,0
@@ -350,7 +290,7 @@ end subroutine getAtomPairs
 ! be called 3 times, once each for valeVale, coreCore, valeCore.
 subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
   use O_Parallel, only: localToGlobalMap, ArrayInfo, BlacsInfo
-  use O_23bst, only: bst_atom_pair, tree_init, tree_destroy
+  use O_23bst, only: bst_node, tree_init, tree_destroy
 
   implicit none
 
@@ -358,7 +298,7 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
   type(ArrayInfo), intent(inout) :: arrinfo
   type(BlacsInfo), intent(inout) :: blcsinfo
   type(AtomPair),  pointer :: atomPairs
-  type(bst_atom_pair), pointer :: atomTree
+  type(bst_node), pointer :: atomTree
   integer :: whichArr ! whichArr is a control variable to tell the subroutine
                       ! which array it is working with. Options are:
                       ! = 0  valeVale array
@@ -394,12 +334,12 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
   ! If we have extra rows and columns because the blocking factor didn't divide
   ! the dimensions of the large array equally, then we need to consider 1
   ! more block, which is smaller than usual.
-  if (arrinfo%extraRows > 0) then
-    arrinfo%nrblocks = arrinfo%nrblocks + 1
-  endif
-  if (arrinfo%extraCols > 0) then
-    arrinfo%ncblocks = arrinfo%ncblocks + 1
-  endif
+  ! if (arrinfo%extraRows > 0) then
+  !   arrinfo%nrblocks = arrinfo%nrblocks + 1
+  ! endif
+  ! if (arrinfo%extraCols > 0) then
+  !   arrinfo%ncblocks = arrinfo%ncblocks + 1
+  ! endif
 
   ! Now we loop over these blocks and record the results in atomPairs
   do i=1, arrinfo%nrblocks
@@ -437,7 +377,7 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
       call getAtoms(ghi(2), ahi(2), secondDim)
      
       ! Now we need to enumerate the atomPairs and add them to our tree and list
-      call addAtomPairRange(alo, ahi, atomPairs, atomTree)
+      call addAtomPairRange(alo, ahi, atomPairs, atomTree, i, j)
     enddo
   enddo
   
@@ -445,8 +385,8 @@ end subroutine getArrAtomPairs
 
 ! This subroutine enumerates a range of atoms and calls addAtomPair to add
 ! a range of atomPairs to a list
-subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree)
-  use O_23bst, only: bst_atom_pair
+subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock)
+  use O_23bst, only: bst_node
 
   implicit none
 
@@ -454,7 +394,8 @@ subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree)
   integer, intent(in), dimension(2) :: alo
   integer, intent(in), dimension(2) :: ahi
   type(AtomPair), pointer :: atomPairs
-  type(bst_atom_pair), pointer :: atomTree
+  type(bst_node), pointer :: atomTree
+  integer, intent(in) :: nrblock, ncblock
 
   ! Define local variables
   integer :: i,j  ! loop vars
@@ -465,15 +406,15 @@ subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree)
       ! We only need to fill the upper triangle of the vale vale matrix
       ! so we only don't need atom pairs where i>=j
       if (i>=j) then
-        call addAtomPair(i,j, atomPairs, atomTree)
+        call addAtomPair(i,j, atomPairs, atomTree, nrblock, ncblock)
       endif
     enddo
   enddo
 end subroutine addAtomPairRange
 
 ! This subroutine appends an atom pair to the list of atomPairs
-subroutine addAtomPair(i, j, atomPairs, atomTree)
-  use O_23bst, only: bst_atom_pair, tree_search, tree_insert
+subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock)
+  use O_23bst, only: bst_node, tree_search, tree_insert
   use O_Parallel, only: modifiedCantor
 
   implicit none
@@ -481,19 +422,23 @@ subroutine addAtomPair(i, j, atomPairs, atomTree)
   ! Define passed parameters
   integer, intent(in) :: i,j
   type(AtomPair), pointer:: atomPairs
-  type(bst_atom_pair), pointer :: atomTree
+  type(bst_node), pointer :: atomTree
+  integer, intent(in) :: nrblock, ncblock
 
   ! Define local variables
   logical :: exists
   integer :: cantorVal
   type(AtomPair), pointer :: newPair
   type(AtomPair), pointer :: lastPair
+  type(bst_node), pointer :: targetPair
 
   call modifiedCantor(i,j,cantorVal)
 
-  call tree_search(atomTree, cantorVal, exists)
-  ! If the value is already in the tree, return without doing anything
+  call tree_search(atomTree, cantorVal, exists, targetPair)
+  ! If the value is already in the tree, add the lock block information to the
+  ! tree, then return.
   if (exists) then
+    call addBlockToTreeNode(targetPair, 
     return
   endif
 

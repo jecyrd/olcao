@@ -41,7 +41,6 @@ recursive subroutine destroyAtomList(root)
 
 end subroutine destroyAtomList
 
-
 ! This subroutine is used to balance an loop for use with MPI.  The input
 ! (toBalance) is the number of things that needs to be split up. The
 ! output (initialVal, finalVal) are the start and stop of array indices.
@@ -430,7 +429,8 @@ subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock)
   integer :: cantorVal
   type(AtomPair), pointer :: newPair
   type(AtomPair), pointer :: lastPair
-  type(bst_node), pointer :: targetPair
+  type(tree_vals), pointer :: targetPair
+  type(tree_vals), pointer :: newval
 
   call modifiedCantor(i,j,cantorVal)
 
@@ -438,11 +438,12 @@ subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock)
   ! If the value is already in the tree, add the lock block information to the
   ! tree, then return.
   if (exists) then
-    call addBlockToTreeNode(targetPair, 
+    call addBlockToTreeNode(targetPair, nrblock, ncblock)
     return
   endif
 
-  ! If the value is not in the tree, then we first need to add it to the tree
+  ! If the value is not in the tree, then we first need to add it to the tree.
+  ! First we need to create a new treevals type.
   call tree_insert(atomTree, cantorVal)
 
   ! Now we need to check and see if this is our first atomPair in the linked

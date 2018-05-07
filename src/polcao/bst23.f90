@@ -289,15 +289,6 @@ subroutine tree_split(node)
     ! What we need to do is adjust the subchildren. We first need to know
     ! which child node is, so we can adjust the subchildren correctly
 
-!   You're on the right track, but these conditions aren't really present 
-!   becuase the value is set to -1 in the children when the twoToThree and
-!   threeToFour node routines are called. Consider not setting to -1 in the
-!   routines, then these conditions will work. If not, then we have to make the
-!   redistribution of children happen in this subroutine.
-!   JUST THINK ABOUT IT. THIS ROUTINE SHOULD ALMOST COMPLETELY WORK BECAUSE
-!   OF WHERE YOU ARE IN THE RECURSION TREE FROM tree_insert.  Just give it a 
-!   little bit.
-
     if ( associated(parent%rchild%mrchild) ) then
       ! we came from the rightchild
       if (.not. associated(parent%mrchild)) then

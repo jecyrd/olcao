@@ -119,7 +119,7 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    !   some huge chunks just to cover some thin border regions.
    if ((atomDims(1) * atomDims(2)) > 250000000) then
       i = 1
-      do while (1)
+      do while (.true.)
          i = i + 1
          if (mod(atomDims(1),i) == 0) then
             atomDimsChunk(1) = (atomDims(1) / i)

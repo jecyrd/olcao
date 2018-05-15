@@ -339,7 +339,7 @@ subroutine getArrDesc(arrinfo, blcsinfo)
   call descinit(arrinfo%desc, arrinfo%I, arrinfo%J, arrinfo%mb, arrinfo%nb, &
     & 0, 0, blcsinfo%context, size(arrinfo%local,1), info)
 
-  if (info) then
+  if (info < 0) then
     print *, "BLACS Routine DESCINIT did not exit successfully. Exiting"
     stop
   endif

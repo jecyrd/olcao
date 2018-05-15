@@ -218,6 +218,7 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
+   use O_Parallel, only: ArrayInfo
    use pzherkInterface
    use MPI
 
@@ -262,6 +263,7 @@ subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
+   use O_Parallel, only: ArrayInfo
    use pzher2kInterface
    use MPI
 
@@ -296,6 +298,7 @@ subroutine valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
+   use O_Parallel, only: ArrayInfo
    use pzhemmInterface
    use MPI
 
@@ -326,6 +329,7 @@ subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
+   use O_Parallel, only: ArrayInfo
    use pzgemmInterface
    use MPI
 
@@ -380,11 +384,13 @@ end subroutine makeValeVale
 
 #else
 
-subroutine valeCoreCoreValeOLGamma (valeDim,coreDim,descriptCV_OL,descriptVV,&
-      & localCV_OL,localVV)
+subroutine valeCoreCoreValeOLGamma (valeDim,coreDim,cvOLInfo, vvInfo, kp)
+!subroutine valeCoreCoreValeOLGamma (valeDim,coreDim,descriptCV_OL,descriptVV,&
+!      & localCV_OL,localVV)
 
    ! Import the necessary modules
    use O_Kinds
+   use O_Parallel, only: gArrayInfo
    use pdsyrkInterface
    use MPI
 
@@ -417,11 +423,13 @@ subroutine valeCoreCoreValeOLGamma (valeDim,coreDim,descriptCV_OL,descriptVV,&
 end subroutine valeCoreCoreValeOLGamma
 
 
-subroutine valeCoreCoreValeGamma (valeDim,coreDim,descriptCV_OL,descriptCV,&
-      & descriptVV,localCV_OL,localCV,localVV)
+subroutine valeCoreCoreValeGamma (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo, kp)
+!subroutine valeCoreCoreValeGamma (valeDim,coreDim,descriptCV_OL,descriptCV,&
+!      & descriptVV,localCV_OL,localCV,localVV)
 
    ! Import the necessary modules
    use O_Kinds
+   use O_Parallel, only: gArrayInfo
    use pdsyr2kInterface
    use MPI
 
@@ -455,11 +463,13 @@ end subroutine valeCoreCoreValeGamma
 
 
 
-subroutine valeCoreCoreCoreGamma (valeDim,coreDim,descriptVC,descriptCC,&
-      & descriptVC_temp,localVC,localCC,localVC_temp)
+subroutine valeCoreCoreCoreGamma (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo, kp)
+!subroutine valeCoreCoreCoreGamma (valeDim,coreDim,descriptVC,descriptCC,&
+!      & descriptVC_temp,localVC,localCC,localVC_temp)
 
    ! Import the necessary modules
    use O_Kinds
+   use O_Parallel, only: gArrayInfo
    use pdsymmInterface
    use MPI
 
@@ -484,11 +494,13 @@ subroutine valeCoreCoreCoreGamma (valeDim,coreDim,descriptVC,descriptCC,&
 end subroutine valeCoreCoreCoreGamma
 
 
-subroutine makeValeValeGamma (valeDim,coreDim,descriptVC_temp,decriptCV,&
-      & descriptVV,localVC_temp,localCV,localVV)
+subroutine makeValeValeGamma (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo, kp)
+!subroutine makeValeValeGamma (valeDim,coreDim,descriptVC_temp,decriptCV,&
+!      & descriptVV,localVC_temp,localCV,localVV)
 
    ! Import the necessary modules
    use O_Kinds
+   use O_Parallel, only: gArrayInfo
    use pdgemmInterface
    use MPI
 

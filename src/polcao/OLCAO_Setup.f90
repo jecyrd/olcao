@@ -47,6 +47,10 @@ subroutine setupSCF
    ! Define cvOL global array file handle
    type(ArrayInfo) :: cvArrayInfo
 
+   ! The atomPairList and atomPairTree can persist through the gaussOverlaps
+   type(AtomPair), pointer :: atomPairList
+   type(bst_atom_pair_node), pointer :: atomPairTree
+
    ! Define tau parameters
 !   integer profiler(2) / 0, 0 /
 !   save profiler
@@ -134,14 +138,18 @@ subroutine setupSCF
    ! Setup the Array Desc needed to persist through overlap routines
    call setupArrayDesc(cvOLArrayInfo, BlcsInfo, coreDim, valeDim) 
 
+   ! Initialize atomPairList and atomPairTree
+   call initAtomPair(atomPairList)
+   call tree_init(atomPairTree)
+
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
+   call gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomPairList, atomPairTree)
    call MPI_Barrier(mpierr)
 
    ! Calculate the matrix elements of the kinetic energy between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapKE(localCVoL, localVCoL)
+   call gaussOverlapKE(BlcsInfo, cvOLArrayInfo, atomPairList, atomPairTree)
    call MPI_Barrier(mpierr)
 
 
@@ -150,7 +158,7 @@ subroutine setupSCF
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the nuclear potentials.
-   call gaussOverlapNP(localCVoL, localVCoL)
+   call gaussOverlapNP(BlcsInfo, cvOLArrayInfo atomPairList, atomPairTree)
    call MPI_Barrier(mpierr)
 
    ! Create the alpha distance matrix with potential alpha factor
@@ -158,7 +166,7 @@ subroutine setupSCF
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the potential site potential alphas.
-   call elecPotGaussOverlap(localCVoL, localVCoL)
+   call elecPotGaussOverlap(BlcsInfo, cvOLarrayInfo, atomPairList, atomPairTree)
    call MPI_Barrier(mpierr)
 
    ! Now that all the matrices are done being made we can deallocate the

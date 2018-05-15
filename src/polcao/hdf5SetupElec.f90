@@ -58,7 +58,8 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    use HDF5
 
    ! Import necessary object modules.
-   use O_PotTypes, only: potDim, numPotTypes
+   use O_PotTypes, only: numPotTypes
+   use O_Potential, only: potDim
 
    ! Define the passed parameters.
    integer(hid_t) :: setup_fid
@@ -149,7 +150,8 @@ subroutine accessSetupElecStatHDF5 (setup_fid)
    use HDF5
 
    ! Import necessary object modules.
-   use O_PotTypes, only: potDim, numPotTypes
+   use O_PotTypes, only: numPotTypes
+   use O_Potential, only: potDim
 
    ! Define the passed parameters.
    integer(hid_t) :: setup_fid

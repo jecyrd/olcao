@@ -22,7 +22,7 @@ module O_IntegralsSCF
    contains
 
 ! Standard two center overlap integral.
-subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
+subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
 
    ! Import necessary modules.
    use O_Kinds
@@ -49,6 +49,8 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
    ! Define the passed parameters.
    type(BlacsInfo), intent(in)    :: BlcsInfo
    type(ArrayInfo), intent(inout) :: cvOLArrayInfo
+   type(AtomPair), pointer :: atomList
+   type(bst_atom_pair_node), pointer :: atomTree
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
@@ -115,7 +117,6 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
    type(ArrayInfo) :: ccArrayInfo
 
    ! Define structure to hold atomPairs in
-   type(AtomPair), pointer :: atomPairs
    type(AtomPair), pointer :: currAtomPair
 
    ! Define variables for gauss integrals
@@ -143,15 +144,16 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo)
    call setupArrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
 
    ! We need to allocate our first atomPair element
-   call initAtomPair(atomPairs)
+   call initAtomPair(atomList)
 
    ! Need to intitalize tree structure here
-   call tree_init(atomPairTree)
+   call tree_init(atomTree)
 
    ! Now we can go about figuring out what atom pairs we need to do
-   call getAtomPairs(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, atomPairs)
+   call getAtomPairs(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, atomPairs, &
+                   & atomTree)
 
-   currAtomPair => atomPairs
+   currAtomPair => atomList
    
    doLoop = .true.
 
@@ -2242,11 +2244,10 @@ subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
    integer :: mpiRank, mpiErr, mpidtype, commDataSize
    integer, dimension(MPI_STATUS_SIZE) :: mpistatus
    type(ArrayInfo) :: vcTempInfo
-!#ifndef GAMMA
-!   complex (kind=double), dimension (:,:) :: localVC_temp
-!#else
-!   real (kind=double), dimension (:,:) :: localVC_temp
-!#endif
+   type(ArrayInfo) :: tArrInfo
+   type(BlacsInfo) :: tBlcsInfo
+   integer :: dcount
+   integer, dimension(7) :: sdata
 
    ! Setup the local array info for the temporary valeCore matrix used in
    ! these subroutines.
@@ -2308,6 +2309,8 @@ subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
                & descriptVV,localVC_temp,localCV,localVV)
 #endif
       endif
+   ! Deallocate the localVC_temp
+   call deallocLocalArray(vcTempInfo)
 
    enddo
 
@@ -2320,18 +2323,9 @@ subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
    call MPI_Barrier(MPI_COMM_WORLD, mpierr)
    if (mpiRank == 0) then
       ! Write out Process 0's information
-      call writeValeVale( )
-
-      ! Set temporary array information
-
-      ! Deallocate array
-
-      ! Allocate temporary array
-
+      call writeValeVale(vvInfo, blcsInfo, numKPoints, potDim, 0, 0, 1)
    endif
 
-   ! MAKE A NOTE ABOUT THE COUPLE DIFFERENT WAYS THIS COULD BE WROTE OUT.
-   ! but just finish this way for now.
    call MPI_Barrier(MPI_COMM_WORLD, mpierr)
    ! Communicate with other processes and write out their information
    do i=1,blcsinfo%mpisize-1
@@ -2339,37 +2333,49 @@ subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
      if (mpirank == i) then
        ! First we need information from the process about the process row, and
        ! column. Also, we need to know the size of the array to allocate.
-       sdata = (/pr,pc,size(local(1)),size(local(2))/)
-       call MPI_Send(sdata, 4, MPI_INTEGER, 0, tag, &
+       sdata = (/blcsInfo%context,
+                 blcsInfo%prows,
+                 blcsInfo%pcols,
+                 blcsInfo%myprow,
+                 blcsInfo%mypcol,
+                 blcsInfo%mpirank,
+                 blcsInfo%mpisize/)
+       call MPI_Send(sdata, 7, MPI_INTEGER, 0, tag, &
          & MPI_COMM_WORLD, mpierr)
 
+       dcount=size(arrinfo%local,1)*size(arrinfo%local,2)*size(arrinfo%local,3)
        ! Now we can send the builk of the data
-       call MPI_Send(vvInfo%local(:,:), (size(), mpidtype, 0, tag, &
+       call MPI_Send(vvInfo%local, dcount, mpidtype, 0, tag, &
          & MPI_COMM_WORLD, mpierr)
      endif
 
      ! Process zero recieves array and writes to disk
      if (mpirank == 0) then
        ! First receive information about the process and local array
-       call MPI_Recv(sdata, 4, MPI_INTEGER, i, tag, &
+       call MPI_Recv(sdata, 7, MPI_INTEGER, i, tag, &
          & MPI_COMM_WORLD, mpistatus, mpierr)
 
-       tempBlcsInfo%myprow = sdata(1)
-       tempBlcsInfo%mypcol = sdata(2)
-       tempArrInfo%mb = sdata(3)
-       tempArrInfo%nb = sdata(4)
+       tBlcsInfo%context = sdata(1)
+       tBlcsInfo%prows = sdata(2)
+       tBlcsInfo%pcols = sdata(3)
+       tBlcsInfo%myprow = sdata(4)
+       tBlcsInfo%mypcol = sdata(5)
+       tBlcsInfo%mpirank = sdata(6)
+       tBlcsInfo%mpisize = sdata(7)
+       call setupArrayDesc(tArrInfo)
+       
+       dcount=size(arrinfo%local,1)*size(arrinfo%local,2)*size(arrinfo%local,3)
        ! Receive the local array information
-       call MPI_Recv(tempArrInfo%local, (), mpidtype, i, tag, &
-         & MPI_COMM_WORLD, mpistatus, mpierr)
+       call MPI_Recv(tArrInfo%local, dcount, mpidtype, i, &
+         & tag, MPI_COMM_WORLD, mpistatus, mpierr)
 
-       call writeValeVale( )
+       call writeValeVale(tArrInfo, tBlcsInfo, numKPoints, potDim, 0, 0, 1)
+       call deallocLocalArray(tArrInfo)
      endif
 
      call MPI_Barrier(MPI_COMM_WORLD, mpierr)
    enddo
 
-   ! Deallocate the localVC_temp
-   deallocate (localVC_temp)
 
 end subroutine orthoOL
 

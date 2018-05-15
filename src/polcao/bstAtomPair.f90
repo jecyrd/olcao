@@ -79,7 +79,7 @@ subroutine initBlockCoords(node)
 end subroutine initBlockCoords
 
 ! Subroutine to deallocate our lblockCoords list
-recursive subroutine destroyBlockCoordsList(root)
+recursive subroutine tree_destroyBlockCoordsList(root)
   implicit none
 
   ! Define passed parameters
@@ -90,27 +90,27 @@ recursive subroutine destroyBlockCoordsList(root)
   endif
 
   deallocate(root)
-end subroutine destroyBlockCoordsList
+end subroutine tree_destroyBlockCoordsList
 
 ! Subroutine to dealloc allocated block vals for a tree_vals structure
-subroutine destroyVals(val)
+subroutine tree_destroyVals(val)
   implicit none
 
   ! Define passed parameters
   type(tree_vals), pointer :: val
 
   if ( associated(val%vvblocks) ) then
-    call destroyBlockCoordsList(val%vvblocks)
+    call tree_destroyBlockCoordsList(val%vvblocks)
   endif
 
   if ( associated(val%cvblocks) ) then
-    call destroyBlockCoordsList(val%vvblocks)
+    call tree_destroyBlockCoordsList(val%cvblocks)
   endif
   
   if ( associated(val%ccblocks) ) then
-    call destroyBlockCoordsList(val%vvblocks)
+    call tree_destroyBlockCoordsList(val%ccblocks)
   endif
-end subroutine destroyVals
+end subroutine tree_destroyVals
 
 ! Subroutine to initialize a new tree node
 subroutine tree_init(tree, val)
@@ -161,12 +161,11 @@ recursive subroutine tree_destroy(tree)
     call tree_destroy(rchild)
   endif
 
-  call destroyVals(tree%lval)
-  call destroyVals(tree%mval)
-  call destroyVals(tree%hval)
+  call tree_destroyVals(tree%lval)
+  call tree_destroyVals(tree%mval)
+  call tree_destroyVals(tree%hval)
   deallocate(tree)
 end subroutine tree_destroy
-
 
 subroutine tree_destroyNode(node)
   implicit none
@@ -323,6 +322,84 @@ subroutine tree_LMR(parent, val, lmr)
 !    endif
   endif
 end subroutine tree_LMR
+
+! This subroutine adds a set of block coords for vvblocks
+subroutine tree_addVVBlock(node, nrblock, ncblock)
+  implicit none
+
+  ! Define passed parameters
+  type(tree_vals), pointer :: nval
+  integer, intent(in) :: nrblock, ncblock
+
+  ! Define local varaiables
+  type(lBlockCoord), pointer :: last
+  type(lblockCoord), pointer :: new
+
+  allocate(new)
+  new%blockrow = nrblock
+  new$blockcol = ncblock
+
+  ! Go to the last item in the linked list
+  last => nval%vvblocks
+  do while ( associated(last%next) )
+    last => last%next
+  enddo
+
+  last%next => new
+
+end subroutine tree_addVVBlock
+
+! This subroutine adds a set of block coords for cvblocks
+subroutine tree_addCVBlock(node, nrblock, ncblock)
+  implicit none
+
+  ! Define passed parameters
+  type(tree_vals), pointer :: nval
+  integer, intent(in) :: nrblock, ncblock
+
+  ! Define local varaiables
+  type(lBlockCoord), pointer :: last
+  type(lblockCoord), pointer :: new
+
+  allocate(new)
+  new%blockrow = nrblock
+  new$blockcol = ncblock
+
+  ! Go to the last item in the linked list
+  last => nval%cvblocks
+  do while ( associated(last%next) )
+    last => last%next
+  enddo
+
+  last%next => new
+
+end subroutine tree_addCVBlock
+
+! This subroutine adds a set of block coords for ccblocks
+subroutine tree_addCCBlock(node, nrblock, ncblock)
+  implicit none
+
+  ! Define passed parameters
+  type(tree_vals), pointer :: nval
+  integer, intent(in) :: nrblock, ncblock
+
+  ! Define local varaiables
+  type(lBlockCoord), pointer :: last
+  type(lblockCoord), pointer :: new
+
+  allocate(new)
+  new%blockrow = nrblock
+  new$blockcol = ncblock
+
+  ! Go to the last item in the linked list
+  last => nval%ccblocks
+  do while ( associated(last%next) )
+    last => last%next
+  enddo
+
+  last%next => new
+
+end subroutine tree_addCCBlock
 
 recursive subroutine tree_insert(node, val)
   implicit none

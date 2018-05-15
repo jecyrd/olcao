@@ -227,8 +227,8 @@ function inRectangle(i,j, loOvlp, hiOvlp)
   integer, intent(in) :: i,j
   integer, intent(in), dimension(2) :: loOvlp, hiOvlp
 
-  if ( ((i>=loOvlp(0)) .and. (i<=hiOvlp(0))) .and. &
-    &  ((j>=loOvlp(1)) .and. (j<=hiOvlp(1))) ) then
+  if ( ((i>=loOvlp(1)) .and. (i<=hiOvlp(1))) .and. &
+    &  ((j>=loOvlp(2)) .and. (j<=hiOvlp(2))) ) then
     inRectangle = 1
     return
   endif
@@ -240,7 +240,7 @@ end function inRectangle
 
 subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs, atomTree)
   use O_Parallel, only: ArrayInfo, BlacsInfo
-  use O_23bst, only: tree_init, tree_destroy
+  use O_bstAtomPair
 
   implicit none
  
@@ -248,7 +248,8 @@ subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs, atomTree)
   type(ArrayInfo), intent(inout) :: vvinfo, ccinfo, cvinfo
   type(BlacsInfo), intent(inout) :: blcsinfo
   type(AtomPair), pointer :: atomPairs
-  type(bst_node), pointer, intent(inout) :: atomTree ! 2-3 tree to keep 
+  type(bst_atom_pair_node), pointer, intent(inout) :: atomTree 
+                                           ! 2-3 tree to keep 
                                            ! us from having duplicate atoms, 
                                            ! and to keep track of the local 
                                            ! blocks the atom pairs belong to
@@ -257,12 +258,15 @@ subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs, atomTree)
   integer, dimension(2) :: vvlo, vvhi
   integer, dimension(2) :: cclo, cchi
   integer, dimension(2) :: cvlo, cvhi
+  type(tree_vals), pointer :: initVal
 
 
   ! Need to figure out a better way to initialize the atomTree but for now
   ! we're just gonna put a zero in it, representing cantor pairing of 0,0
   ! which we should never have anyway.
-  call tree_init(atomTree, 0)
+  allocate(initVal)
+  initVal%val = 0
+  call tree_init(atomTree, initVal)
 
   ! We need to call getArrAtomPairs 3 times one for each array
   call getArrAtomPairs(vvinfo, blcsinfo, atomPairs, atomTree, 0)
@@ -289,7 +293,7 @@ end subroutine getAtomPairs
 ! be called 3 times, once each for valeVale, coreCore, valeCore.
 subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
   use O_Parallel, only: localToGlobalMap, ArrayInfo, BlacsInfo
-  use O_23bst, only: bst_node, tree_init, tree_destroy
+  use O_bstAtomPair
 
   implicit none
 
@@ -297,7 +301,7 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
   type(ArrayInfo), intent(inout) :: arrinfo
   type(BlacsInfo), intent(inout) :: blcsinfo
   type(AtomPair),  pointer :: atomPairs
-  type(bst_node), pointer :: atomTree
+  type(bst_atom_pair_node), pointer :: atomTree
   integer :: whichArr ! whichArr is a control variable to tell the subroutine
                       ! which array it is working with. Options are:
                       ! = 0  valeVale array
@@ -376,7 +380,7 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
       call getAtoms(ghi(2), ahi(2), secondDim)
      
       ! Now we need to enumerate the atomPairs and add them to our tree and list
-      call addAtomPairRange(alo, ahi, atomPairs, atomTree, i, j)
+      call addAtomPairRange(alo, ahi, atomPairs, atomTree, i, j, whichArr)
     enddo
   enddo
   
@@ -384,8 +388,9 @@ end subroutine getArrAtomPairs
 
 ! This subroutine enumerates a range of atoms and calls addAtomPair to add
 ! a range of atomPairs to a list
-subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock)
-  use O_23bst, only: bst_node
+subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock &
+                          & whichArr)
+  use O_bstAtomPair
 
   implicit none
 
@@ -393,8 +398,11 @@ subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock)
   integer, intent(in), dimension(2) :: alo
   integer, intent(in), dimension(2) :: ahi
   type(AtomPair), pointer :: atomPairs
-  type(bst_node), pointer :: atomTree
+  type(bst_atom_pair_node), pointer :: atomTree
   integer, intent(in) :: nrblock, ncblock
+  integer, intent(in) :: whichArr ! = 0  valeVale array
+                                  !   1  coreCore array
+                                  !   3  coreVale array
 
   ! Define local variables
   integer :: i,j  ! loop vars
@@ -405,15 +413,15 @@ subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock)
       ! We only need to fill the upper triangle of the vale vale matrix
       ! so we only don't need atom pairs where i>=j
       if (i>=j) then
-        call addAtomPair(i,j, atomPairs, atomTree, nrblock, ncblock)
+        call addAtomPair(i,j, atomPairs, atomTree, nrblock, ncblock, whichArr)
       endif
     enddo
   enddo
 end subroutine addAtomPairRange
 
 ! This subroutine appends an atom pair to the list of atomPairs
-subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock)
-  use O_23bst, only: bst_node, tree_search, tree_insert
+subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock, whichArr)
+  use O_bstAtomPair
   use O_Parallel, only: modifiedCantor
 
   implicit none
@@ -421,8 +429,11 @@ subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock)
   ! Define passed parameters
   integer, intent(in) :: i,j
   type(AtomPair), pointer:: atomPairs
-  type(bst_node), pointer :: atomTree
+  type(bst_atom_pair_node), pointer :: atomTree
   integer, intent(in) :: nrblock, ncblock
+  integer, intent(in) :: whichArr ! = 0  valeVale array
+                                  !   1  coreCore array
+                                  !   3  coreVale array
 
   ! Define local variables
   logical :: exists
@@ -431,20 +442,30 @@ subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock)
   type(AtomPair), pointer :: lastPair
   type(tree_vals), pointer :: targetPair
   type(tree_vals), pointer :: newval
+  type(tree_vals), pointer :: tempVal
 
   call modifiedCantor(i,j,cantorVal)
+  allocate(tempVal)
+  tempVal%val = cantorVal
 
-  call tree_search(atomTree, cantorVal, exists, targetPair)
+  !call tree_search(atomTree, cantorVal, exists, targetPair)
+  call tree_search(atomTree, tempVal, exists, targetPair)
   ! If the value is already in the tree, add the lock block information to the
   ! tree, then return.
   if (exists) then
-    call addBlockToTreeNode(targetPair, nrblock, ncblock)
+    if (whichArr==0) then
+      call tree_addVVBlock(targetpair, nrblock, ncblock)
+    else if (whichArr==1) then
+      call tree_addCVBlock(targetpair, nrblock, ncblock)
+    else if (whichArr==2) then
+      call tree_addCCBlock(targetpair, nrblock, ncblock)
+    endif
     return
   endif
 
   ! If the value is not in the tree, then we first need to add it to the tree.
   ! First we need to create a new treevals type.
-  call tree_insert(atomTree, cantorVal)
+  call tree_insert(atomTree, tempVal)
 
   ! Now we need to check and see if this is our first atomPair in the linked
   ! list.
@@ -580,30 +601,46 @@ end subroutine getAtoms
 
 ! This subroutine handles writing out the vale vale matrix to disk.
 ! It is only to be done by process 0.
-subroutine writeValeVale(arrinfo, blcsinfo, file_id, dset_id, &
-                       & dspace_id, mpirank)
+subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
+                        & currPotTypeNumber, CurrAlphaNumber, opcode)
   use HDF5
 
   use O_Kinds
-  use O_Parallel
+  use O_Parallel, only: ArrayInfo, BlacsInfo, localToGlobalMap
+
+  use O_SetupIntegralsHDF5, only: valeVale_dsid
 
   implicit none
   
   ! Define passed parameters
   type(ArrayInfo) :: arrinfo
   type(BlacsInfo) :: blcsinfo
-  integer(HID_T) :: file_id
-  integer(HID_T) :: dset_id
-  integer(HID_T) :: dspace_id
-  integer :: mpirank
+  integer, intent(in) :: numKPoints, potDim, currPotTypeNumber, currAlphaNumber
+  integer, intent(in) :: opcode
 
   ! Define local variables
-  integer(hsize_t), dimension(3) :: hslabCount, hslabStart
-  integer(hid_t) :: memspace_dsid
-  integer :: i, j, k, l, x, y, a,b, hdferr
+  integer :: i, j, k, l, x, y, a,b, kpl, hdferr
   integer, dimension(2) :: lo,hi
 
+  integer(hid_t) :: memspace_dsid
+  integer(hid_t), dimension(numKPoints,potDim) :: dataseetToWrite_did
+  integer(hsize_t), dimension(2) ::hslabCount, hslabStart
+
   real(kind=double), allocatable, dimension(:,:,:) :: dataOut
+  real(kind=double) :: smallThresh10
+
+  smallThresh10 = real(1.0d-10,double)
+
+  select case(opcode)
+  case(1)
+    datasetToWrite_did(:,1) = atomOverlap_did(:)
+  case(2)
+    datasetToWrite_did(:,1) = atomKEOverlap_did(:)
+  case(3)
+    datasetToWrite_did(:,1) = atomNucOverlap_did(:)
+  case(4)
+    datasetToWrite_did(:,:) = atomPotOverlap_did(:,:)
+  end select
 
   ! Set the third component to numkp rather than setting in loop every time
   hslabCount(3) = size(arrinfo%local,3)
@@ -638,7 +675,7 @@ subroutine writeValeVale(arrinfo, blcsinfo, file_id, dset_id, &
       call h5screate_simple_f(3, hslabCount, memspace_dsid, hdferr)
     
       ! Define hyperslab to be written to
-      call h5sselect_hyperslab_f(dspace_id, H5S_SELECT_SET_F, hslabStart, &
+      call h5sselect_hyperslab_f(valeVale_dsid, H5S_SELECT_SET_F, hslabStart, &
         & hslabCount, hdferr)
 
       ! Need to prepare the data so that complex parts are on saved on the
@@ -657,10 +694,23 @@ subroutine writeValeVale(arrinfo, blcsinfo, file_id, dset_id, &
         x = x + 1
       enddo
 
-      ! write slab to disk
-      call h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE, &
-        & dataOut(1:hslabCount(1),1:hslabCount(2), :), hslabCount, hdferr, &
-        & file_space_id=dspace_id, mem_space_id=memspace_dsid)
+      do kpl=1,numKPoints 
+        select case (opCode)
+        case(1:3)
+          ! write slab to disk
+          call h5dwrite_f(datasetToWrite_did(kpl,1), H5T_NATIVE_DOUBLE, &
+            & dataOut(1:hslabCount(1),1:hslabCount(2),:), hslabCount, hdferr, &
+            & file_space_id=valeVale_dsid, mem_space_id=memspace_dsid)
+        case(4)
+          call h5dwrite_f(datasetToWrite_did( &
+            & kpl,potTypes(currPotTypeNumber%cumulAlphaSum+currAlphaNumber), &
+            H5T_NATIVE_DOUBLE, dataOut(1:hslabCount(1),1:hslabCount(2),:), &
+            & hslabCount, hdferr, file_space_id=valeVale_dsid, &
+            & mem_space_id=memspace_dsid)
+        case default
+          print *, "Something went very wrong in writeValeVale"
+        end select
+      enddo
     enddo
   enddo
 

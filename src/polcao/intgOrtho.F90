@@ -214,7 +214,7 @@ module O_Orthogonalization
 
 #ifndef GAMMA
 
-subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo, kp)
+subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo,vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
@@ -259,7 +259,7 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo, kp)
 
 end subroutine valeCoreCoreValeOL
 
-subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo, kp)
+subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo,kp)
 
    ! Import the necessary modules
    use O_Kinds
@@ -294,7 +294,7 @@ subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo, kp)
 
 end subroutine valeCoreCoreVale
 
-subroutine valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo, kp)
+subroutine valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo,kp)
 
    ! Import the necessary modules
    use O_Kinds
@@ -325,7 +325,7 @@ end subroutine valeCoreCoreCore
 ! This subroutine will execute a VC*CV matrix multiplication and store the
 !   result in VV. (This should be Hermitian. This subroutine will also set
 !   numbers less that 1e-10 to zero to improve compressed storage.
-subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo, kp)
+subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo,kp)
 
    ! Import the necessary modules
    use O_Kinds
@@ -384,7 +384,7 @@ end subroutine makeValeVale
 
 #else
 
-subroutine valeCoreCoreValeOLGamma (valeDim,coreDim,cvOLInfo, vvInfo, kp)
+subroutine valeCoreCoreValeOLGamma (valeDim,coreDim,cvOLInfo,vvInfo, kp)
 !subroutine valeCoreCoreValeOLGamma (valeDim,coreDim,descriptCV_OL,descriptVV,&
 !      & localCV_OL,localVV)
 
@@ -400,16 +400,18 @@ subroutine valeCoreCoreValeOLGamma (valeDim,coreDim,cvOLInfo, vvInfo, kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim ! N
    integer, intent(in) :: coreDim ! K
-   integer, dimension(9), intent(in) :: descriptCV_OL ! DESCA
-   integer, dimension(9), intent(in) :: descriptVV ! DESCC
-   real (kind=double), dimension (:,:), intent(inout) :: localCV_OL ! A
-   real (kind=double), dimension (:,:), intent(inout) :: localVV ! C
+   type(ArrayInfo), intent(inout) :: vvInfo
+   type(ArrayInfo), intent(inout) :: cvOLInfo
+   integer, intent(in) :: kp
 
    ! Do a rank 1 update. That is: C := alpha*A**T*A + beta*C where T equals
    !   transpose. Also, alpha = -2 and beta = 1. The matrix A is the coreVale
    !   and C is the valeVale.
-   call pdsyrk('U','T',valeDim,coreDim,-2.0_double,localCV_OL,0,0,&
-         & descriptCV_OL,1.0_double,localVV,0,0,descriptVV)
+   !call pdsyrk('U','T',valeDim,coreDim,-2.0_double,localCV_OL,0,0,&
+   !      & descriptCV_OL,1.0_double,localVV,0,0,descriptVV)
+   call pdsyrk('U','C',valeDim,coreDim,(-2.0_double,0.0_double),&
+         & cvOLInfo%local(:,:,kp), 0, 0, cvOLInfo%desc, &
+         & (1.0_double,0.0_double), vvInfo%local(:,:,kp), 0,0, vvInfo%desc)
 
    ! For reference, the non-parallel approach would look like the following
    !   with (first) blas and (second) straight matmul:
@@ -439,16 +441,18 @@ subroutine valeCoreCoreValeGamma (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo, kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim ! N
    integer, intent(in) :: coreDim ! K
-   integer, dimension(9), intent(in) :: descriptCV_OL ! DESCA
-   integer, dimension(9), intent(in) :: descriptCV ! DESCB
-   integer, dimension(9), intent(in) :: descriptVV ! DESCC
-   real (kind=double), dimension (:,:), intent(inout) :: localCV_OL ! A
-   real (kind=double), dimension (:,:), intent(inout) :: localCV ! B
-   real (kind=double), dimension (:,:), intent(inout) :: localVV ! C
+   type(ArrayInfo), intent(inout) :: vvInfo
+   type(ArrayInfo), intent(inout) :: cvInfo
+   type(ArrayInfo), intent(inout) :: cvOLInfo
+   integer, intent(in) :: kp
 
-   call pdsyr2k('U','T',valeDim,coreDim,-1.0_double,localCV_OL,0,0,&
-         & descriptCV_OL,localCV,0,0,descriptCV,1.0_double,localVV,0,0,&
-         & descriptVV)
+   !call pdsyr2k('U','T',valeDim,coreDim,-1.0_double,localCV_OL,0,0,&
+   !      & descriptCV_OL,localCV,0,0,descriptCV,1.0_double,localVV,0,0,&
+   !      & descriptVV)
+   call pzsyr2k('U','C',valeDim,coreDim,(-1.0_double,0.0_double),&
+         & cvOLInfo%local(:,:,kp),0,0,cvOLInfo%desc,cvInfo%local(:,:,kp), &
+         & 0,0,cvInfo%desc,(1.0_double,0.0_double),vvInfo%local(:,:,kp),0,0, &
+         & vvInfo%desc)
 
    ! For reference, the non-parallel approach would look like the following
    !   with (first) blas and (second) straight matmul:
@@ -479,17 +483,19 @@ subroutine valeCoreCoreCoreGamma (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo, kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim ! M
    integer, intent(in) :: coreDim ! N
-   integer, dimension(9), intent(in) :: descriptVC ! DESCB
-   integer, dimension(9), intent(in) :: descriptCC ! DESCA (Symmetric)
-   integer, dimension(9), intent(in) :: descriptVC_temp ! DESCC (Resultant)
-   real (kind=double), dimension (:,:), intent(inout) :: localVC ! B
-   real (kind=double), dimension (:,:), intent(inout) :: localCC ! A (Symm)
-   real (kind=double), dimension (:,:), intent(inout) :: localVC_temp ! C
+   type(ArrayInfo), intent(inout) :: vcInfo
+   type(ArrayInfo), intent(inout) :: ccInfo
+   type(ArrayInfo), intent(inout) :: vcTempInfo
+   integer, intent(in) :: kp
 
    ! Note that localVC_temp is the resultant matrix.
 
-   call pdsymm ('R','U',valeDim,coreDim,1.0_double,localCC,0,0,descriptCC,&
-         & localVC,0,0,descriptVC,0.0_double,localVC_temp,0,0,descriptVC_temp)
+   !call pdsymm ('R','U',valeDim,coreDim,1.0_double,localCC,0,0,descriptCC,&
+   !      & localVC,0,0,descriptVC,0.0_double,localVC_temp,0,0,descriptVC_temp)
+   call pdsymm ('R','U',valeDim,coreDim,(1.0_double,0.0_double),&
+         & ccInfo%local(:,:,kp) ,0,0,ccInfo%desc,vcInfo%local(:,:,kp),0,0, &
+         & vcInfo%desc,(0.0_double,0.0_double),vcTempInfo%local(:,:,kp), &
+         & 0,0,vcTempInfo%desc)
 
 end subroutine valeCoreCoreCoreGamma
 
@@ -510,12 +516,10 @@ subroutine makeValeValeGamma (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo, kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim
    integer, intent(in) :: coreDim
-   integer, dimension(9), intent(in) :: descriptVC_temp ! DESCA
-   integer, dimension(9), intent(in) :: descriptCV ! DESCB
-   integer, dimension(9), intent(in) :: descriptVV ! DESCC (Resultant,Symmetric)
-   real (kind=double), dimension (:,:), intent(inout) :: localVC_temp ! A
-   real (kind=double), dimension (:,:), intent(inout) :: localCV ! B
-   real (kind=double), dimension (:,:), intent(inout) :: localVV ! C (Symm)
+   type(ArrayInfo), intent(inout) :: vcTempInfo
+   type(ArrayInfo), intent(inout) :: cvInfo
+   type(ArrayInfo), intent(inout) :: vvInfo
+   integer, intent(in) :: kp
 
    ! Define loop control variables
    integer :: i,j
@@ -526,9 +530,13 @@ subroutine makeValeValeGamma (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo, kp)
    negligLimit = real(1.0D-10,double)
 
    ! Change to pdsymm
-   call pdgemm ('N','N',valeDim,valeDim,coreDim,1.0_double,localVC_temp,0,0,&
-         & descriptVC_temp,localCV,0,0,descriptCV,1.0_double,localVV,0,0,&
-         & descriptVV)
+   !call pdgemm ('N','N',valeDim,valeDim,coreDim,1.0_double,localVC_temp,0,0,&
+   !      & descriptVC_temp,localCV,0,0,descriptCV,1.0_double,localVV,0,0,&
+   !      & descriptVV)
+   call pdgemm ('N','N',valeDim,valeDim,coreDim,(1.0_double,0.0_double),&
+         & vcTempInfo%local(:,:,kp),0,0,vcTempInfo%desc, &
+         & cvInfo%local(:,:,kp),0,0,cvInfo%desc, (1.0_double,0.0_double), &
+         & vvInfo%local(:,:,kp),0,0,vvInfo%desc)
 
    ! Eliminate all values in localVV that are less than 1e-10.
    if (negligLimit /= 0.0_double) then

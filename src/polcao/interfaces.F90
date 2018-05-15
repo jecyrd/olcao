@@ -344,6 +344,28 @@ module zherkInterface
    end interface
 end module zherkInterface
 
+module pzherkInterface
+   interface
+      subroutine pzherk (UPLO,TRANS,N,K,ALPHA,A,IA,JA,DESCA,BETA,C,IC,JC,DESCC)
+         use O_Kinds
+         character*1 :: UPLO
+         character*1 :: TRANS
+         integer :: N
+         integer :: K
+         real (kind=double) :: ALPHA
+         complex (kind=double), dimension(LDA,N) :: A
+         integer :: IA
+         integer :: JA
+         integer, dimension(9) :: DESCA
+         real (kind=double) :: BETA
+         complex (kind=double), dimension(LDC,N) :: C
+         integer :: IC
+         integer :: JC
+         integer, dimension(9) :: DESCC
+      end subroutine pzherk
+   end interface
+end module pzherkInterface
+
 module zher2kInterface
    interface
       subroutine zher2k (UPLO,TRANS,N,K,ALPHA,A,LDA,B,LDB,BETA,C,LDC)
@@ -364,6 +386,91 @@ module zher2kInterface
    end interface
 end module zher2kInterface
 
+module pzherk2kInterface
+   interface
+      subroutine pzher2k (UPLO,TRANS,N,K,ALPHA,A,IA,JA,DESCA, &
+                                           & B,IB,JB,DESCB, BETA, &
+                                           & C,IC,JC,DESCC)
+         use O_Kinds
+         character*1 :: UPLO
+         character*1 :: TRANS
+         integer :: N
+         integer :: K
+         real (kind=double) :: ALPHA
+         complex (kind=double), dimension(LDA,N) :: A
+         integer :: IA
+         integer :: JA
+         integer, dimension(9) :: DESCA
+         complex (kind=double), dimension(LDC,N) :: B
+         integer :: IB
+         integer :: JB
+         integer, dimension(9) :: DESCB
+         real (kind=double) :: BETA
+         complex (kind=double), dimension(LDC,N) :: C
+         integer :: IC
+         integer :: JC
+         integer, dimension(9) :: DESCC
+      end subroutine pzherk2k
+   end interface
+end module pzherk2kInterface
+
+module pzhemmInterface
+   interface
+      subroutine pzhemm (SIDE,UPLO,M,N,ALPHA,A,IA,JA,DESCA, &
+                                           & B,IB,JB,DESCB, BETA, &
+                                           & C,IC,JC,DESCC)
+         use O_Kinds
+         character*1 :: SIDE
+         character*1 :: UPLO
+         integer :: M
+         integer :: N
+         real (kind=double) :: ALPHA
+         complex (kind=double), dimension(LDA,N) :: A
+         integer :: IA
+         integer :: JA
+         integer, dimension(9) :: DESCA
+         complex (kind=double), dimension(LDC,N) :: B
+         integer :: IB
+         integer :: JB
+         integer, dimension(9) :: DESCB
+         real (kind=double) :: BETA
+         complex (kind=double), dimension(LDC,N) :: C
+         integer :: IC
+         integer :: JC
+         integer, dimension(9) :: DESCC
+      end subroutine pzhemm
+   end interface
+end module pzhemmkInterface
+
+module pzgemmInterface
+   interface
+      subroutine pzgemm (TRANSA,TRANSB,M,N,K,ALPHA,A,IA,JA,DESCA, &
+                                           & B,IB,JB,DESCB, BETA, &
+                                           & C,IC,JC,DESCC)
+         use O_Kinds
+         character*1 :: TRANSA
+         character*1 :: TRANSB
+         integer :: M
+         integer :: N
+         integer :: K
+         real (kind=double) :: ALPHA
+         complex (kind=double), dimension(LDA,N) :: A
+         integer :: IA
+         integer :: JA
+         integer, dimension(9) :: DESCA
+         complex (kind=double), dimension(LDC,N) :: B
+         integer :: IB
+         integer :: JB
+         integer, dimension(9) :: DESCB
+         real (kind=double) :: BETA
+         complex (kind=double), dimension(LDC,N) :: C
+         integer :: IC
+         integer :: JC
+         integer, dimension(9) :: DESCC
+      end subroutine pzgemm
+   end interface
+end module pzgemmInterface
+
 module dsyrkInterface
    interface
       subroutine dsyrk (UPLO,TRANS,N,K,ALPHA,A,LDA,BETA,C,LDC)
@@ -381,6 +488,28 @@ module dsyrkInterface
       end subroutine dsyrk
    end interface
 end module dsyrkInterface
+
+module pdsyrkInterface
+   interface
+      subroutine pdsyrk (UPLO,TRANS,N,K,ALPHA,A,IA,JA,DESCA,BETA,C,IC,JC,DESCC)
+         use O_Kinds
+         character*1 :: UPLO
+         character*1 :: TRANS
+         integer :: N
+         integer :: K
+         real (kind=double) :: ALPHA
+         real (kind=double), dimension(LDA,N) :: A
+         integer :: IA
+         integer :: JA
+         integer, dimension(9) :: DESCA
+         real (kind=double) :: BETA
+         real (kind=double), dimension(LDC,N) :: C
+         integer :: IC
+         integer :: JC
+         integer, dimension(9) :: DESCC
+      end subroutine dsyrk
+   end interface
+end module pdsyrkInterface
 
 module dsyr2kInterface
    interface
@@ -402,3 +531,87 @@ module dsyr2kInterface
    end interface
 end module dsyr2kInterface
 
+module pdsyr2kInterface
+   interface
+      subroutine pdsyr2k (UPLO,TRANS,N,K,ALPHA,A,IA,JA,DESCA,&
+                                            & B,IB,JB,DESCB,BETA, &
+                                            & C,IC,JC,DESCC)
+         use O_Kinds
+         character*1 :: UPLO
+         character*1 :: TRANS
+         integer :: N
+         integer :: K
+         real (kind=double) :: ALPHA
+         real (kind=double), dimension(LDA,N) :: A
+         integer :: IA
+         integer :: JA
+         integer, dimension(9) :: DESCA
+         real (kind=double), dimension(LDB,N) :: B
+         integer :: IB
+         integer :: JB
+         integer, dimension(9) :: DESCB
+         real (kind=double) :: BETA
+         real (kind=double), dimension(LDC,N) :: C
+         integer :: IC
+         integer :: JC
+         integer, dimension(9) :: DESCC
+      end subroutine pdsyr2k
+   end interface
+end module pdsyr2kInterface
+
+module pdsymmInterface
+   interface
+      subroutine pdsymm (SIDE,UPLO,M,N,ALPHA,A,IA,JA,DESCA,&
+                                           & B,IB,JB,DESCB,BETA, &
+                                           & C,IC,JC,DESCC)
+         use O_Kinds
+         character*1 :: SIDE
+         character*1 :: UPLO
+         integer :: M
+         integer :: N
+         real (kind=double) :: ALPHA
+         real (kind=double), dimension(LDA,N) :: A
+         integer :: IA
+         integer :: JA
+         integer, dimension(9) :: DESCA
+         real (kind=double), dimension(LDA,N) :: B
+         integer :: IB
+         integer :: JB
+         integer, dimension(9) :: DESCB
+         real (kind=double) :: BETA
+         real (kind=double), dimension(LDC,N) :: C
+         integer :: IC
+         integer :: JC
+         integer, dimension(9) :: DESCC
+      end subroutine pdsymm
+   end interface
+end module pdsymmInterface
+
+module pdgemmInterface
+   interface
+      subroutine pdgemm (TRANSA,TRANSB,M,N,K,ALPHA,A,IA,JA,DESCA,&
+                                                 & B,IB,JB,DESCB,BETA, &
+                                                 & C,IC,JC,DESCC)
+         use O_Kinds
+         character*1 :: TRANSA
+         character*1 :: TRANSB
+         integer :: M
+         integer :: N
+         integer :: K
+         real (kind=double) :: ALPHA
+         real (kind=double), dimension(LDA,N) :: A
+         integer :: IA
+         integer :: JA
+         integer, dimension(9) :: DESCA
+         real (kind=double), dimension(LDA,N) :: B
+         integer :: IB
+         integer :: JB
+         integer, dimension(9) :: DESCB
+         real (kind=double) :: BETA
+         real (kind=double), dimension(LDC,N) :: C
+         integer :: IC
+         integer :: JC
+         integer, dimension(9) :: DESCC
+      end subroutine pdgemm
+   end interface
+end module pdgemmInterface

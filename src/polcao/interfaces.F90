@@ -353,12 +353,12 @@ module pzherkInterface
          integer :: N
          integer :: K
          real (kind=double) :: ALPHA
-         complex (kind=double), dimension(LDA,N) :: A
+         complex (kind=double), dimension(K,N) :: A
          integer :: IA
          integer :: JA
          integer, dimension(9) :: DESCA
          real (kind=double) :: BETA
-         complex (kind=double), dimension(LDC,N) :: C
+         complex (kind=double), dimension(N,N) :: C
          integer :: IC
          integer :: JC
          integer, dimension(9) :: DESCC
@@ -397,16 +397,16 @@ module pzherk2kInterface
          integer :: N
          integer :: K
          real (kind=double) :: ALPHA
-         complex (kind=double), dimension(LDA,N) :: A
+         complex (kind=double), dimension(K,N) :: A
          integer :: IA
          integer :: JA
          integer, dimension(9) :: DESCA
-         complex (kind=double), dimension(LDC,N) :: B
+         complex (kind=double), dimension(K,N) :: B
          integer :: IB
          integer :: JB
          integer, dimension(9) :: DESCB
          real (kind=double) :: BETA
-         complex (kind=double), dimension(LDC,N) :: C
+         complex (kind=double), dimension(N,N) :: C
          integer :: IC
          integer :: JC
          integer, dimension(9) :: DESCC
@@ -425,16 +425,16 @@ module pzhemmInterface
          integer :: M
          integer :: N
          real (kind=double) :: ALPHA
-         complex (kind=double), dimension(LDA,N) :: A
+         complex (kind=double), dimension(N,N) :: A
          integer :: IA
          integer :: JA
          integer, dimension(9) :: DESCA
-         complex (kind=double), dimension(LDC,N) :: B
+         complex (kind=double), dimension(M,N) :: B
          integer :: IB
          integer :: JB
          integer, dimension(9) :: DESCB
          real (kind=double) :: BETA
-         complex (kind=double), dimension(LDC,N) :: C
+         complex (kind=double), dimension(M,N) :: C
          integer :: IC
          integer :: JC
          integer, dimension(9) :: DESCC
@@ -454,16 +454,16 @@ module pzgemmInterface
          integer :: N
          integer :: K
          real (kind=double) :: ALPHA
-         complex (kind=double), dimension(LDA,N) :: A
+         complex (kind=double), dimension(M,K) :: A
          integer :: IA
          integer :: JA
          integer, dimension(9) :: DESCA
-         complex (kind=double), dimension(LDC,N) :: B
+         complex (kind=double), dimension(K,N) :: B
          integer :: IB
          integer :: JB
          integer, dimension(9) :: DESCB
          real (kind=double) :: BETA
-         complex (kind=double), dimension(LDC,N) :: C
+         complex (kind=double), dimension(M,N) :: C
          integer :: IC
          integer :: JC
          integer, dimension(9) :: DESCC
@@ -498,12 +498,12 @@ module pdsyrkInterface
          integer :: N
          integer :: K
          real (kind=double) :: ALPHA
-         real (kind=double), dimension(LDA,N) :: A
+         real (kind=double), dimension(N,K) :: A
          integer :: IA
          integer :: JA
          integer, dimension(9) :: DESCA
          real (kind=double) :: BETA
-         real (kind=double), dimension(LDC,N) :: C
+         real (kind=double), dimension(N,N) :: C
          integer :: IC
          integer :: JC
          integer, dimension(9) :: DESCC
@@ -542,16 +542,16 @@ module pdsyr2kInterface
          integer :: N
          integer :: K
          real (kind=double) :: ALPHA
-         real (kind=double), dimension(LDA,N) :: A
+         real (kind=double), dimension(K,N) :: A
          integer :: IA
          integer :: JA
          integer, dimension(9) :: DESCA
-         real (kind=double), dimension(LDB,N) :: B
+         real (kind=double), dimension(K,N) :: B
          integer :: IB
          integer :: JB
          integer, dimension(9) :: DESCB
          real (kind=double) :: BETA
-         real (kind=double), dimension(LDC,N) :: C
+         real (kind=double), dimension(N,N) :: C
          integer :: IC
          integer :: JC
          integer, dimension(9) :: DESCC
@@ -570,16 +570,16 @@ module pdsymmInterface
          integer :: M
          integer :: N
          real (kind=double) :: ALPHA
-         real (kind=double), dimension(LDA,N) :: A
+         real (kind=double), dimension(N,N) :: A
          integer :: IA
          integer :: JA
          integer, dimension(9) :: DESCA
-         real (kind=double), dimension(LDA,N) :: B
+         real (kind=double), dimension(M,N) :: B
          integer :: IB
          integer :: JB
          integer, dimension(9) :: DESCB
          real (kind=double) :: BETA
-         real (kind=double), dimension(LDC,N) :: C
+         real (kind=double), dimension(M,N) :: C
          integer :: IC
          integer :: JC
          integer, dimension(9) :: DESCC
@@ -599,16 +599,16 @@ module pdgemmInterface
          integer :: N
          integer :: K
          real (kind=double) :: ALPHA
-         real (kind=double), dimension(LDA,N) :: A
+         real (kind=double), dimension(M,K) :: A
          integer :: IA
          integer :: JA
          integer, dimension(9) :: DESCA
-         real (kind=double), dimension(LDA,N) :: B
+         real (kind=double), dimension(K,N) :: B
          integer :: IB
          integer :: JB
          integer, dimension(9) :: DESCB
          real (kind=double) :: BETA
-         real (kind=double), dimension(LDC,N) :: C
+         real (kind=double), dimension(M,N) :: C
          integer :: IC
          integer :: JC
          integer, dimension(9) :: DESCC

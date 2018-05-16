@@ -386,7 +386,7 @@ module zher2kInterface
    end interface
 end module zher2kInterface
 
-module pzherk2kInterface
+module pzher2kInterface
    interface
       subroutine pzher2k (UPLO,TRANS,N,K,ALPHA,A,IA,JA,DESCA, &
                                            & B,IB,JB,DESCB, BETA, &
@@ -410,9 +410,9 @@ module pzherk2kInterface
          integer :: IC
          integer :: JC
          integer, dimension(9) :: DESCC
-      end subroutine pzherk2k
+      end subroutine pzher2k
    end interface
-end module pzherk2kInterface
+end module pzher2kInterface
 
 module pzhemmInterface
    interface
@@ -440,7 +440,7 @@ module pzhemmInterface
          integer, dimension(9) :: DESCC
       end subroutine pzhemm
    end interface
-end module pzhemmkInterface
+end module pzhemmInterface
 
 module pzgemmInterface
    interface
@@ -507,7 +507,7 @@ module pdsyrkInterface
          integer :: IC
          integer :: JC
          integer, dimension(9) :: DESCC
-      end subroutine dsyrk
+      end subroutine pdsyrk
    end interface
 end module pdsyrkInterface
 

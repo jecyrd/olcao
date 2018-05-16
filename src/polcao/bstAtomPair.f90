@@ -324,7 +324,7 @@ subroutine tree_LMR(parent, val, lmr)
 end subroutine tree_LMR
 
 ! This subroutine adds a set of block coords for vvblocks
-subroutine tree_addVVBlock(node, nrblock, ncblock)
+subroutine tree_addVVBlock(nval, nrblock, ncblock)
   implicit none
 
   ! Define passed parameters
@@ -332,12 +332,12 @@ subroutine tree_addVVBlock(node, nrblock, ncblock)
   integer, intent(in) :: nrblock, ncblock
 
   ! Define local varaiables
-  type(lBlockCoord), pointer :: last
-  type(lblockCoord), pointer :: new
+  type(lBlockCoords), pointer :: last
+  type(lBlockCoords), pointer :: new
 
   allocate(new)
   new%blockrow = nrblock
-  new$blockcol = ncblock
+  new%blockcol = ncblock
 
   ! Go to the last item in the linked list
   last => nval%vvblocks
@@ -350,7 +350,7 @@ subroutine tree_addVVBlock(node, nrblock, ncblock)
 end subroutine tree_addVVBlock
 
 ! This subroutine adds a set of block coords for cvblocks
-subroutine tree_addCVBlock(node, nrblock, ncblock)
+subroutine tree_addCVBlock(nval, nrblock, ncblock)
   implicit none
 
   ! Define passed parameters
@@ -358,12 +358,12 @@ subroutine tree_addCVBlock(node, nrblock, ncblock)
   integer, intent(in) :: nrblock, ncblock
 
   ! Define local varaiables
-  type(lBlockCoord), pointer :: last
-  type(lblockCoord), pointer :: new
+  type(lBlockCoords), pointer :: last
+  type(lBlockCoords), pointer :: new
 
   allocate(new)
   new%blockrow = nrblock
-  new$blockcol = ncblock
+  new%blockcol = ncblock
 
   ! Go to the last item in the linked list
   last => nval%cvblocks
@@ -376,7 +376,7 @@ subroutine tree_addCVBlock(node, nrblock, ncblock)
 end subroutine tree_addCVBlock
 
 ! This subroutine adds a set of block coords for ccblocks
-subroutine tree_addCCBlock(node, nrblock, ncblock)
+subroutine tree_addCCBlock(nval, nrblock, ncblock)
   implicit none
 
   ! Define passed parameters
@@ -384,12 +384,12 @@ subroutine tree_addCCBlock(node, nrblock, ncblock)
   integer, intent(in) :: nrblock, ncblock
 
   ! Define local varaiables
-  type(lBlockCoord), pointer :: last
-  type(lblockCoord), pointer :: new
+  type(lBlockCoords), pointer :: last
+  type(lBlockCoords), pointer :: new
 
   allocate(new)
   new%blockrow = nrblock
-  new$blockcol = ncblock
+  new%blockcol = ncblock
 
   ! Go to the last item in the linked list
   last => nval%ccblocks

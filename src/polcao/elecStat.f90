@@ -61,7 +61,7 @@ subroutine neutralAndNuclearQPot()
 
    ! Import external subroutines.
    use O_MathSubs, only: erf
-   use O_ParallelSubs
+   use O_ParallelSetup, only: loadBalMPI
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -670,19 +670,19 @@ subroutine neutralAndNuclearQPot()
    call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
    if (mpiRank==0) then
      call h5dwrite_f(potAlphaOverlap_did,H5T_NATIVE_DOUBLE, &
-           & potAlphaOverlap(:,:),potDims2,hdferr)
+           & potAlphaOverlap(:,:),potPot,hdferr)
      if (hdferr /= 0) stop 'Failed to write pot alpha overlap'
      call h5dwrite_f(nonLocalNeutQPot_did,H5T_NATIVE_DOUBLE, &
-           & nonLocalNeutQPot(:,:),potDims2,hdferr)
+           & nonLocalNeutQPot(:,:),potPot,hdferr)
      if (hdferr /= 0) stop 'Failed to write non local neut q pot'
      call h5dwrite_f(nonLocalNucQPot_did,H5T_NATIVE_DOUBLE, &
-           & nonLocalNucQPot(:),potDims1,hdferr)
+           & nonLocalNucQPot(:),pot,hdferr)
      if (hdferr /= 0) stop 'Failed to write non local nuc q pot'
      call h5dwrite_f(localNeutQPot_did,H5T_NATIVE_DOUBLE, &
-           & localNeutQPot(:,:),potDims2,hdferr)
+           & localNeutQPot(:,:),potPot,hdferr)
      if (hdferr /= 0) stop 'Failed to write local neut q pot'
      call h5dwrite_f(localNucQPot_did,H5T_NATIVE_DOUBLE, &
-           & localNucQPot(:),potDims1,hdferr)
+           & localNucQPot(:),pot,hdferr)
      if (hdferr /= 0) stop 'Failed to write local nuc q pot'
    endif
    ! Dellocate the variables from the global data structures that will not
@@ -712,7 +712,7 @@ subroutine residualQ()
 
    ! Import external subroutines.
    use O_MathSubs, only: erf
-   use O_ParallelSubs
+   use O_ParallelSetup, only: loadBalMPI
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -852,8 +852,8 @@ subroutine residualQ()
             ! Establish the beginning and ending indices for the set of
             !   alphas (potential terms) that we are dealing with out of
             !   all of the alphas in the whole system.
-            initAlphaIndex(1)   = finAlphaIndex(1)
-            finAlphaIndex(1)    = finAlphaIndex(1) + currentNumAlphas(1)
+            initAlphaIndex   = finAlphaIndex
+            finAlphaIndex    = finAlphaIndex + currentNumAlphas(1)
 
             if (lastElement /= currentElement) then
                do j = 1, currentNumAlphas(1)
@@ -1099,8 +1099,7 @@ subroutine residualQ()
    if (mpiRank==0) then
       ! Write to disk the matrices that will be used by main later.
       call h5dwrite_f(nonLocalResidualQ_did,H5T_NATIVE_DOUBLE, &
-            & nonLocalResidualQ(:,:),potTypesPot,hdferr, &
-            & xfer_prp=pot_xferpid)
+            & nonLocalResidualQ(:,:),potTypesPot,hdferr)
       if (hdferr /= 0) stop 'Failed to write non local residual charge'
    endif
 

@@ -101,6 +101,44 @@ module O_Parallel
   ! Begin list of subroutines and functions
   contains
 
+! Subroutine for transposing a complex distributed matrix
+subroutine pctrans(aInfo, cInfo)
+  use pztrancInterface
+
+  implicit none
+
+  ! Define passed parameters
+  type(ArrayInfo) :: aInfo, cInfo
+
+  ! Define local variables
+  integer :: i
+
+  do i=1,aInfo%numKP
+    call pztranc(aInfo%J,aInfo%I,(1.0_double,0.0_double),aInfo%local(:,:,i), &
+          & 0,0,aInfo%desc,(1.0_double,0.0_double), cInfo%local(:,:,i), &
+          & 0,0,cInfo%desc)
+  enddo
+end subroutine pctrans
+
+! Subroutine for transposing a real distributed matrix
+subroutine pdtrans(aInfo, cInfo)
+  use pdtranInterface
+
+  implicit none
+
+  ! Define passed parameters
+  type(gArrayInfo) :: aInfo, cInfo
+
+  ! Define local variables
+  integer :: i
+
+  do i=1,aInfo%numKP
+    call pdtran(aInfo%J,aInfo%I,1.0_double,aInfo%local, &
+          & 0,0,aInfo%desc,1.0_double, cInfo%local, &
+          & 0,0,cInfo%desc)
+  enddo
+end subroutine pdtrans
+
 ! This subroutine uses a modified Cantor pairing function to encode 2 natural
 ! numbers into 1 natural number. Normally the Cantor pairing function is 
 ! unique to the ordering of a pair. i.e. (1,3) produces a different result
@@ -206,7 +244,7 @@ subroutine setupArrayDesc(arrinfo, blcsinfo, numGlobalRows, numGlobalCols, &
   implicit none
 
   ! Define Passed Parameters
-  type(BlacsInfo), intent(inout) :: blcsinfo
+  type(BlacsInfo), intent(in) :: blcsinfo
   type(ArrayInfo), intent(inout) :: arrinfo
   integer, intent(in) :: numGlobalRows, numGlobalCols
   integer, intent(in) :: numKP
@@ -234,7 +272,7 @@ subroutine getBlockDims(arrinfo, blcsinfo)
   implicit none
 
   ! Define passed parameters
-  type(BlacsInfo), intent(inout) :: blcsinfo
+  type(BlacsInfo), intent(in) :: blcsinfo
   type(ArrayInfo), intent(inout) :: arrinfo
 
   ! Local variables
@@ -288,7 +326,7 @@ subroutine allocLocalArray(arrinfo, blcsinfo)
   implicit none
 
   ! Define passed parameters
-  type(BlacsInfo), intent(inout) :: blcsinfo
+  type(BlacsInfo), intent(in) :: blcsinfo
   type(ArrayInfo), intent(inout) :: arrinfo
 
   ! Define local variables
@@ -330,7 +368,7 @@ subroutine getArrDesc(arrinfo, blcsinfo)
   implicit none
   
   ! Define passed parameters
-  type(BlacsInfo), intent(inout) :: blcsinfo
+  type(BlacsInfo), intent(in) :: blcsinfo
   type(ArrayInfo), intent(inout) :: arrinfo
 
   ! Define local variables

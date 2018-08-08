@@ -246,7 +246,7 @@ subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs, atomTree)
  
   ! Define passed parameters
   type(ArrayInfo), intent(inout) :: vvinfo, ccinfo, cvinfo
-  type(BlacsInfo), intent(inout) :: blcsinfo
+  type(BlacsInfo), intent(in) :: blcsinfo
   type(AtomPair), pointer :: atomPairs
   type(bst_atom_pair_node), pointer, intent(inout) :: atomTree 
                                            ! 2-3 tree to keep 
@@ -273,9 +273,10 @@ subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs, atomTree)
   call getArrAtomPairs(ccinfo, blcsinfo, atomPairs, atomTree, 1)
   call getArrAtomPairs(cvinfo, blcsinfo, atomPairs, atomTree, 2)
 
-  ! By this time we're finished with our atomTree, so we can destroy it.
-  ! All our atom pair data should be stored in the atomPairs linked list
-  call tree_destroy(atomTree)
+  ! We no longer do this because we need the atomTree for saveCurrentPair
+  !  ! By this time we're finished with our atomTree, so we can destroy it.
+  !  ! All our atom pair data should be stored in the atomPairs linked list
+  !  call tree_destroy(atomTree)
 
 end subroutine getAtomPairs
 
@@ -299,7 +300,7 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
 
   ! Define passed parameters
   type(ArrayInfo), intent(inout) :: arrinfo
-  type(BlacsInfo), intent(inout) :: blcsinfo
+  type(BlacsInfo), intent(in) :: blcsinfo
   type(AtomPair),  pointer :: atomPairs
   type(bst_atom_pair_node), pointer :: atomTree
   integer :: whichArr ! whichArr is a control variable to tell the subroutine
@@ -388,7 +389,7 @@ end subroutine getArrAtomPairs
 
 ! This subroutine enumerates a range of atoms and calls addAtomPair to add
 ! a range of atomPairs to a list
-subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock &
+subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock, &
                           & whichArr)
   use O_bstAtomPair
 
@@ -608,7 +609,11 @@ subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
   use O_Kinds
   use O_Parallel, only: ArrayInfo, BlacsInfo, localToGlobalMap
 
-  use O_SetupIntegralsHDF5, only: valeVale_dsid
+  use O_SetupIntegralsHDF5, only: valeVale_dsid, atomOverlap_did, &
+                                & atomKEOverlap_did, atomNucOverlap_did, &
+                                & atomPotOverlap_did
+
+  use O_PotTypes, only: potTypes
 
   implicit none
   
@@ -623,8 +628,8 @@ subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
   integer, dimension(2) :: lo,hi
 
   integer(hid_t) :: memspace_dsid
-  integer(hid_t), dimension(numKPoints,potDim) :: dataseetToWrite_did
-  integer(hsize_t), dimension(2) ::hslabCount, hslabStart
+  integer(hid_t), dimension(numKPoints,potDim) :: datasetToWrite_did
+  integer(hsize_t), dimension(3) ::hslabCount, hslabStart
 
   real(kind=double), allocatable, dimension(:,:,:) :: dataOut
   real(kind=double) :: smallThresh10
@@ -703,7 +708,7 @@ subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
             & file_space_id=valeVale_dsid, mem_space_id=memspace_dsid)
         case(4)
           call h5dwrite_f(datasetToWrite_did( &
-            & kpl,potTypes(currPotTypeNumber%cumulAlphaSum+currAlphaNumber), &
+            & kpl,potTypes(currPotTypeNumber)%cumulAlphaSum+currAlphaNumber), &
             H5T_NATIVE_DOUBLE, dataOut(1:hslabCount(1),1:hslabCount(2),:), &
             & hslabCount, hdferr, file_space_id=valeVale_dsid, &
             & mem_space_id=memspace_dsid)

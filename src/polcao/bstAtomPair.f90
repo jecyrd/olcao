@@ -86,7 +86,7 @@ recursive subroutine tree_destroyBlockCoordsList(root)
   type (lBlockCoords), pointer :: root
 
   if (associated(root%next)) then
-    call destroyBlockCoordsList(root%next)
+    call tree_destroyBlockCoordsList(root%next)
   endif
 
   deallocate(root)

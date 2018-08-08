@@ -355,7 +355,7 @@ subroutine makeECMeshAndOverlap()
    use O_PotTypes, only: potTypes, maxNumPotAlphas
    use O_Potential, only: potDim, GGA
    use O_TimeStamps
-   use O_ParallelSubs
+   use O_ParallelSetup, only: loadBalMPI
    use O_SetupExchCorrHDF5, only: numPoints_did, numPoints, radialWeight_did, &
          & points, exchRhoOp_did, potPoints, exchCorrOverlap_did, potPot
 
@@ -435,6 +435,9 @@ subroutine makeECMeshAndOverlap()
    ! Define variables for MPI
    integer :: maxSite, minSite
    integer :: mpiSize,mpiRank,mpiErr
+   integer :: mpi_i
+   integer, dimension(MPI_STATUS_SIZE) :: mpistatus
+   integer :: mpipoints
 
    ! We need to know the size of the last dimension in the exchRhoOp matrix.
    !   This value is determined by whether or not we are doing an LDA (1) or a
@@ -790,6 +793,9 @@ subroutine makeECMeshAndOverlap()
       !   results for the radialWeight and exchRhoOp one at a time and store
       !   them to disk in HDF5 format.
       call MPI_BARRIER (MPI_COMM_WORLD,mpiErr)
+      ! MPI routines are not compatible with hid_t type that numPoints is
+      !   declared with so we store it in a regular integer here
+      mpipoints = numPoints(1)
       if (mpiRank == 0) then
          call h5dwrite_f(numPoints_did(i),H5T_NATIVE_INTEGER,numRayPoints,&
                & numPoints,hdferr)
@@ -805,26 +811,26 @@ subroutine makeECMeshAndOverlap()
 
             ! Get the index number of the potSite loop (i) from the MPI process.
             call MPI_RECV (mpi_i,1,MPI_INTEGER,j,0,MPI_COMM_WORLD,&
-                  & MPI_STATUS_IGNORE,mpiErr)
+                  & mpistatus,mpiErr)
 
             ! Receive the number of ray points from process j and write to disk.
-            call MPI_RECV (numPoints,1,MPI_INTEGER,j,1,MPI_COMM_WORLD,&
-                  & MPI_STATUS_IGNORE,mpiErr)
-            call h5dwrite_f(numPoints_did(mpi_i),H5T_NATIVE_INTEGER,&
+            call MPI_RECV (numPoints,1,MPI_INTEGER,j,1,MPI_COMM_WORLD, &
+                  & mpistatus,mpiErr)
+            call h5dwrite_f(numPoints_did(mpi_i),H5T_NATIVE_INTEGER, &
                   & numRayPoints,numPoints,hdferr)
             if (hdferr /= 0) stop 'Failed to write num ray points'
 
             ! Receive the radial weights for those ray points and write to disk.
-            call MPI_RECV (radialWeight(1:numPoints),numPoints,&
-                  & MPI_DOUBLE_PRECISION,j,2,MPI_COMM_WORLD,MPI_STATUS_IGNORE,&
-                  & mpiErr)
+            call MPI_RECV (radialWeight(1:numPoints(1)),mpipoints, &
+                  & MPI_DOUBLE_PRECISION,j,2,MPI_COMM_WORLD,mpistatus,mpiErr)
+
             call h5dwrite_f(radialWeight_did(mpi_i),H5T_NATIVE_DOUBLE, &
                   & radialWeight(:),points,hdferr)
             if (hdferr /= 0) stop 'Failed to write radial weights'
 
             ! Receive the exchRhoOp from process j and write to disk.
             call MPI_RECV (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
-                  & MPI_DOUBLE_PRECISION,j,3,MPI_COMM_WORLD,MPI_STATUS_IGNORE,&
+                  & MPI_DOUBLE_PRECISION,j,3,MPI_COMM_WORLD,mpistatus, &
                   & mpiErr)
             call h5dwrite_f(exchRhoOp_did(mpi_i),H5T_NATIVE_DOUBLE, &
                   & exchRhoOp(:,:,:),potPoints,hdferr)
@@ -841,12 +847,12 @@ subroutine makeECMeshAndOverlap()
          call MPI_SEND (numPoints,1,MPI_INTEGER,0,1,MPI_COMM_WORLD,mpiErr)
 
          ! Send the radial weights of those ray points to process zero.
-         call MPI_SEND (radialWeight(1:numPoints),numPoints,&
+         call MPI_SEND (radialWeight(1:numPoints(1)),mpipoints, &
                & MPI_DOUBLE_PRECISION,0,2,MPI_COMM_WORLD,mpiErr)
 
          ! Send the exchRhoOp to process zero.
-         call MPI_RECV (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
-               & MPI_DOUBLE_PRECISION,0,3,MPI_COMM_WORLD,mpiErr)
+         !call MPI_RECV (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
+         !      & MPI_DOUBLE_PRECISION,0,3,MPI_COMM_WORLD,mpiErr)
       endif
 
 ! This needs to be modified to work in a parallel environment. Perhaps send

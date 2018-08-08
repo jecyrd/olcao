@@ -363,17 +363,17 @@ subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo,kp)
    if (negligLimit /= 0.0_double) then
       do i = 1, size(vvInfo%local,2)
          do j = 1, size(vvInfo%local,1)
-            if (abs(real(vvInfo%local(j,i,kp)) <= negligLimit) then
-               if (abs(aimag(vvInfo%local(j,i,kp) <= negligLimit) then
+            if (abs(real(vvInfo%local(j,i,kp))) <= negligLimit) then
+               if (abs(aimag(vvInfo%local(j,i,kp))) <= negligLimit) then
                   vvInfo%local(j,i,kp) = (0.0_double,0.0_double)
                else
                   vvInfo%local(j,i,kp) = &
-                    & (0.0_double,aimag(vvInfo%local(j,i,kp)),double)
+                    & cmplx(0.0_double,aimag(vvInfo%local(j,i,kp)),double)
                endif
             else
-               if (abs(aimag(vvInfo%local(j,i,kp) <= negligLimit) then
+               if (abs(aimag(vvInfo%local(j,i,kp))) <= negligLimit) then
                   vvInfo%local(j,i,kp) = &
-                    & (real(vvInfo%local(j,i,kp)),0.0_double,double)
+                    & cmplx(real(vvInfo%local(j,i,kp),double),0.0_double,double)
                endif
             endif
          enddo

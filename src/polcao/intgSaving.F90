@@ -173,6 +173,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsInfo, vvInfo, &
    use O_KPoints, only: numKPoints
    use O_AtomicTypes, only: maxNumStates, atomTypes
    use O_AtomicSites, only: valeDim, coreDim, atomSites
+   use O_bstAtomPair, only: bst_atom_pair_node
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -294,10 +295,11 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
 
    ! Import the necessary data modules.
    use O_ParallelSetup, only: getOverlapRect, checkRectOverlap
-   use O_Parallel, only: BlacsInfo, ArrayInfo, &
+   use O_Parallel, only: BlacsInfo, ArrayInfo, modifiedCantor, &
                        & localToGlobalMap, globalToLocalMap
    use O_KPoints, only: numKPoints
    use O_AtomicTypes, only: maxNumStates
+   use O_bstAtomPair
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -317,9 +319,9 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
    integer :: row, col ! Loop variables
    integer :: a, b     ! Block local indices
    integer, dimension(2) :: lblock, hblock ! Block global indices
-   integer, dimension(2) :: hiStateIndex ! Current pair global indices
-                                         ! corresponding to the bottom right
-                                         ! corner of the pair
+   !integer, dimension(2) :: hiStateIndex ! Current pair global indices
+   !                                      ! corresponding to the bottom right
+   !                                      ! corner of the pair
    integer, dimension(2) :: loOverlap, hiOverlap ! If currentPair overlaps
                                                  ! with a block, the indices
                                                  ! corresponding to overlap
@@ -334,6 +336,7 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
    type(tree_vals), pointer :: tempval
    type(lBlockCoords), pointer :: curblock
    logical :: exists
+   integer :: cantor
 
    allocate(tempVal)
    call modifiedCantor(i,j,cantor)
@@ -341,11 +344,11 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
    call tree_search(atomTree, tempval, exists, curPair)
    deallocate(tempval)
 
-   if (whichArr = 0) then
+   if (whichArr == 0) then
      curblock => curPair%vvblocks
-   elseif (whichArr = 1) then
+   elseif (whichArr == 1) then
      curblock => curPair%cvblocks
-   elseif (whichArr = 2) then
+   elseif (whichArr == 2) then
      curblock => curPair%ccblocks
    endif
 

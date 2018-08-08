@@ -19,9 +19,8 @@ subroutine setupSCF
    use O_ElectroStatics,      only: makeElectrostatics
    use O_GaussianRelations,   only: makeAlphaDist, makeAlphaNucDist, &
                                   & makeAlphaPotDist, cleanUpGaussRelations
-   use O_IntegralsSCF,        only: allocateIntegralsSCF, gaussOverlapOL, &
-                                  & gaussOverlapKE, gaussOverlapNP, &
-                                  & elecPotGaussOverlap
+   use O_IntegralsSCF,        only: gaussOverlapOL, gaussOverlapKE, &
+                                  & gaussOverlapNP, elecPotGaussOverlap
    use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
    use O_PotSites,    only: cleanUpPotSites
@@ -35,7 +34,9 @@ subroutine setupSCF
 
    ! Import the necessary MPI files
    use MPI
-   use O_ParallelSubs
+   use O_Parallel
+   use O_ParallelSetup
+   use O_bstAtomPair
 
    ! Make sure that there are no accidental variable declarations.
    implicit none
@@ -45,7 +46,8 @@ subroutine setupSCF
    integer :: mpiSize
    
    ! Define cvOL global array file handle
-   type(ArrayInfo) :: cvArrayInfo
+   type(ArrayInfo) :: cvOLArrayInfo
+   type(BlacsInfo) :: blcsinfo
 
    ! The atomPairList and atomPairTree can persist through the gaussOverlaps
    type(AtomPair), pointer :: atomPairList
@@ -122,35 +124,34 @@ subroutine setupSCF
 
    ! Construct the exchange correlation overlap matrix, and sampling field.
    call makeECMeshAndOverlap()
-   call MPI_Barrier(mpierr)
+   call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
    ! Construct matrix operators and integral vectors that are used to later
    !   determine the electrostatic potential.
    call makeElectrostatics()
-   call MPI_Barrier(mpierr)
+   call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
    ! Create the alpha distance matrices.
    call makeAlphaDist
 
    ! Setup the BLACS interface
-   call setupBlacs(BlcsInfo)
+   call setupBlacs(blcsinfo)
 
    ! Setup the Array Desc needed to persist through overlap routines
-   call setupArrayDesc(cvOLArrayInfo, BlcsInfo, coreDim, valeDim) 
+   call setupArrayDesc(cvOLArrayInfo, BlcsInfo, coreDim, valeDim, numKPoints) 
 
    ! Initialize atomPairList and atomPairTree
    call initAtomPair(atomPairList)
-   call tree_init(atomPairTree)
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions.
    call gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomPairList, atomPairTree)
-   call MPI_Barrier(mpierr)
+   call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
    ! Calculate the matrix elements of the kinetic energy between all LCAO Bloch
    !   wave functions.
    call gaussOverlapKE(BlcsInfo, cvOLArrayInfo, atomPairList, atomPairTree)
-   call MPI_Barrier(mpierr)
+   call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
 
    ! Create the alpha distance matrix with nuclear alpha factor
@@ -158,16 +159,16 @@ subroutine setupSCF
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the nuclear potentials.
-   call gaussOverlapNP(BlcsInfo, cvOLArrayInfo atomPairList, atomPairTree)
-   call MPI_Barrier(mpierr)
+   call gaussOverlapNP(BlcsInfo, cvOLArrayInfo, atomPairList, atomPairTree)
+   call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
    ! Create the alpha distance matrix with potential alpha factor
    call makeAlphaPotDist()
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the potential site potential alphas.
-   call elecPotGaussOverlap(BlcsInfo, cvOLarrayInfo, atomPairList, atomPairTree)
-   call MPI_Barrier(mpierr)
+   call elecPotGaussOverlap(BlcsInfo, cvOLArrayInfo, atomPairList, atomPairTree)
+   call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
    ! Now that all the matrices are done being made we can deallocate the
    !   data structures that were used in all the above subroutines but are not
@@ -181,7 +182,7 @@ subroutine setupSCF
    if ((coreDim /= 0) .and. (mpiRank == 0)) then
       call makeCoreRho()
    endif
-   call MPI_Barrier(mpierr)
+   call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
 
    ! Deallocate the data component of the atomType data structure that holds
@@ -193,10 +194,10 @@ subroutine setupSCF
    if (mpiRank == 0) then
       call closeSetupHDF5
    endif
-   call MPI_Barrier(mpierr)
+   call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
    ! Deallocate the CVoL and VCoL matrices
-   call cleanUpOL(localCVoL, localVCoL)
+   call deallocLocalArray(cvOLArrayInfo)
 
    ! Deallocate all the other as of yet un-deallocated arrays.
    call cleanUpAtomTypes
@@ -224,7 +225,7 @@ subroutine setupSCF
    endif
 
    ! Close the GA interface
-   call MPI_Barrier(mpierr)
+   call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
    ! End the MPI interface
    call MPI_FINALIZE (mpierr)

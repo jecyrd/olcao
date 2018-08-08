@@ -295,7 +295,6 @@ end subroutine solveDPOSVX
 end module O_LAPACKDPOSVX
 
 
-
 module O_BLASZHER
    interface
       subroutine zher(UPLO,N,ALPHA,X,INCX,A,LDA)
@@ -326,6 +325,46 @@ module O_BLASDSYR
    end interface
 end module O_BLASDSYR
 
+module pztrancInterface
+  interface
+    subroutine pztranc(M,N,ALPHA,A,IA,JA,DESCA,BETA,C,IC,JC,DESCC)
+      use O_Kinds
+      integer:: M
+      integer:: N
+      complex(kind=double) :: ALPHA
+      complex(kind=double), dimension(N,M) :: A
+      integer :: IA
+      integer :: JA
+      integer, dimension(9) :: DESCA
+      complex(kind=double) :: BETA
+      complex(kind=double), dimension(M,N) :: C
+      integer :: IC
+      integer :: JC
+      integer, dimension(9) :: DESCC
+    end subroutine pztranc
+  end interface
+end module pztrancInterface
+
+module pdtranInterface
+  interface
+    subroutine pdtran(M,N,ALPHA,A,IA,JA,DESCA,BETA,C,IC,JC,DESCC)
+      use O_Kinds
+      integer:: M
+      integer:: N
+      real(kind=double) :: ALPHA
+      real(kind=double), dimension(N,M) :: A
+      integer :: IA
+      integer :: JA
+      integer, dimension(9) :: DESCA
+      real(kind=double) :: BETA
+      real(kind=double), dimension(M,N) :: C
+      integer :: IC
+      integer :: JC
+      integer, dimension(9) :: DESCC
+    end subroutine pdtran
+  end interface
+end module pdtranInterface
+
 module zherkInterface
    interface
       subroutine zherk (UPLO,TRANS,N,K,ALPHA,A,LDA,BETA,C,LDC)
@@ -352,12 +391,12 @@ module pzherkInterface
          character*1 :: TRANS
          integer :: N
          integer :: K
-         real (kind=double) :: ALPHA
+         complex (kind=double) :: ALPHA
          complex (kind=double), dimension(K,N) :: A
          integer :: IA
          integer :: JA
          integer, dimension(9) :: DESCA
-         real (kind=double) :: BETA
+         complex (kind=double) :: BETA
          complex (kind=double), dimension(N,N) :: C
          integer :: IC
          integer :: JC
@@ -396,7 +435,7 @@ module pzher2kInterface
          character*1 :: TRANS
          integer :: N
          integer :: K
-         real (kind=double) :: ALPHA
+         complex (kind=double) :: ALPHA
          complex (kind=double), dimension(K,N) :: A
          integer :: IA
          integer :: JA
@@ -405,7 +444,7 @@ module pzher2kInterface
          integer :: IB
          integer :: JB
          integer, dimension(9) :: DESCB
-         real (kind=double) :: BETA
+         complex (kind=double) :: BETA
          complex (kind=double), dimension(N,N) :: C
          integer :: IC
          integer :: JC
@@ -424,7 +463,7 @@ module pzhemmInterface
          character*1 :: UPLO
          integer :: M
          integer :: N
-         real (kind=double) :: ALPHA
+         complex (kind=double) :: ALPHA
          complex (kind=double), dimension(N,N) :: A
          integer :: IA
          integer :: JA
@@ -433,7 +472,7 @@ module pzhemmInterface
          integer :: IB
          integer :: JB
          integer, dimension(9) :: DESCB
-         real (kind=double) :: BETA
+         complex (kind=double) :: BETA
          complex (kind=double), dimension(M,N) :: C
          integer :: IC
          integer :: JC
@@ -453,7 +492,7 @@ module pzgemmInterface
          integer :: M
          integer :: N
          integer :: K
-         real (kind=double) :: ALPHA
+         complex (kind=double) :: ALPHA
          complex (kind=double), dimension(M,K) :: A
          integer :: IA
          integer :: JA
@@ -462,7 +501,7 @@ module pzgemmInterface
          integer :: IB
          integer :: JB
          integer, dimension(9) :: DESCB
-         real (kind=double) :: BETA
+         complex (kind=double) :: BETA
          complex (kind=double), dimension(M,N) :: C
          integer :: IC
          integer :: JC

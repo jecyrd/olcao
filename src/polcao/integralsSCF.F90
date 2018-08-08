@@ -37,11 +37,13 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
    use O_TimeStamps
+   use O_Potential, only: potDim
 
    ! Import necessary parallel modules
    use MPI
    use O_Parallel
    use O_ParallelSetup
+   use O_bstAtomPair
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -115,8 +117,6 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
    ! Define variables for MPI, and distributed operations
    type(ArrayInfo) :: vvArrayInfo
    type(ArrayInfo) :: ccArrayInfo
-
-   ! Define structure to hold atomPairs in
    type(AtomPair), pointer :: currAtomPair
 
    ! Define variables for gauss integrals
@@ -139,19 +139,14 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
 #else
    allocate (currentPairGamma    (maxNumStates,maxNumStates))
 #endif
-   
+  
+   ! Set up arrays and descriptors for this set of integrals
    call setupArrayDesc(vvArrayInfo, BlcsInfo, valeDim, valeDim, numKPoints)
    call setupArrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
 
-   ! We need to allocate our first atomPair element
-   call initAtomPair(atomList)
-
-   ! Need to intitalize tree structure here
-   call tree_init(atomTree)
-
    ! Now we can go about figuring out what atom pairs we need to do
-   call getAtomPairs(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, atomPairs, &
-                   & atomTree)
+   call getAtomPairs(vvArrayInfo, ccArrayInfo, cvOLArrayInfo, BlcsInfo, &
+                   & atomList, atomTree)
 
    currAtomPair => atomList
    
@@ -164,14 +159,11 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
 
       ! This might make more sense to do at the end of the loop. But it works
       ! just fine here too
-      if (associated(currAtomPari%next)) then
+      if (associated(currAtomPair%next)) then
         currAtomPair => currAtomPair%next
       else
         doLoop = .false.
       endif
-
-      ! Get the actual atom numbers of the atoms in this atomLoop pair.
-      call findUnpackedIndices(atomLoop,i,j)
 
       ! Obtain local copies of key data from larger global data structures for
       !   the first looped atom.
@@ -340,7 +332,6 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
                   endif
                endif
 
-
                ! Calculate the opcode to do the correct set of integrals
                !   for the current alpha pair
                l1l2Switch = ishft(1,&
@@ -411,8 +402,8 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
       ! First we must make a correction for the atom 2 lattice origin shift.
       call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
             & latticeVector,numKPoints,0)
-      call saveCurrentPair(i,j,numKPoints,currentPair,blcsInfo, vvInfo,&
-            & ccInfo, cvInfo)
+      call saveCurrentPair(i,j,numKPoints,currentPair,blcsInfo, vvArrayInfo,&
+            & ccArrayInfo, cvOLArrayInfo, atomTree)
 #else
       call saveCurrentPairGamma(i,j,currentPairGamma,descriptVV,descriptCC,&
             & descriptCV_OL,descriptVC_OL,localVV,localCC,localCV_OL,&
@@ -436,16 +427,13 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
 #endif
 
    ! Perform orthogonalization and save the results to disk.
-   call orthoOL(vvArrayInfo, ccArrInfo, cvOLArrINfo, blcsinfo, potDim)
-
-   ! Deallocate the atomPair list
-   call destroyAtomList(atomPairs)
+   call orthoOL(vvArrayInfo, ccArrayInfo, cvOLArrayInfo, blcsinfo, potDim)
 
    ! Deallocate the local matrices for the overlap. Note that we need to keep
    !   the localCV_OL and localVC_OL for the orthogonalization of the other
    !   matrices later.  (E.g. kinetic energy, potential overlap, nuclear.)
-   deallocate(localVV)
-   deallocate(localCC)
+   call deallocLocalArray(vvArrayInfo)
+   call deallocLocalArray(ccArrayInfo)
 
    ! Record the completion of this gaussian integration set.
    call timeStampEnd (8)
@@ -453,7 +441,7 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
 end subroutine gaussOverlapOL
 
 ! Two center Kinetic Energy overlap integrals.
-subroutine gaussOverlapKE(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
+subroutine gaussOverlapKE(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
 
    ! Import necessary modules.
    use O_Kinds
@@ -468,24 +456,26 @@ subroutine gaussOverlapKE(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
    use O_GaussianIntegrals, only: KEInteg
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
+   use O_Potential, only: potDim
+
+   ! Import necessary parallel modules
    use MPI
+   use O_Parallel
+   use O_ParallelSetup
+   use O_bstAtomPair
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
-   ! Define the passed parameters.
-   integer, dimension (9), intent(in) :: descriptCV_OL
-   integer, dimension (9), intent(in) :: descriptVC_OL
-#ifndef GAMMA
-   complex (kind=double), dimension(:,:), intent (inout) :: localCV_OL
-   complex (kind=double), dimension(:,:), intent (inout) :: localVC_OL
-#else
-   real (kind=double), dimension(:,:), intent (inout) :: localCV_OL
-   real (kind=double), dimension(:,:), intent (inout) :: localVC_OL
-#endif
+   ! Define passed parameters.
+   type(BlacsInfo), intent(in) :: BlcsInfo
+   type(ArrayInfo), intent(inout) :: cvOLArrayInfo
+   type(AtomPair), pointer :: atomList
+   type(bst_atom_pair_node), pointer :: atomTree
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
+   logical :: doLoop
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -543,21 +533,16 @@ subroutine gaussOverlapKE(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
    real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
          ! lattice points will be considered for integration.
 
-   ! Define variables for MPI
-   integer :: maxAtom, minAtom
-   integer :: toBalance
-   integer :: atomLoop
-   integer :: mpiSize,mpiRank,mpiErr
+   ! Define variables for MPI, and distributed operations
+   type(ArrayInfo) :: vvArrayInfo
+   type(ArrayInfo) :: cvArrayInfo
+   type(ArrayInfo) :: ccArrayInfo
+   type(AtomPair), pointer :: currAtomPair
 
    ! Define variables for gauss integrals
    integer :: l1l2Switch
    integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
 
-   ! Declare GA toolkit file handles
-   integer,allocatable,dimension(:) :: ga_coreCore
-   integer,allocatable,dimension(:) :: ga_coreVale
-   integer,allocatable,dimension(:) :: ga_valeVale
-   integer :: ga_valeCore
 
    ! Record the beginning of this phase of the setup calculation.
    call timeStampStart (9)
@@ -575,42 +560,27 @@ subroutine gaussOverlapKE(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
    allocate (currentPairGamma    (maxNumStates,maxNumStates))
 #endif
 
-   ! Allocate space to hold the GA file handles.
-   allocate(ga_coreCore(numKPoints))
-   allocate(ga_coreVale(numKPoints))
-   allocate(ga_valeVale(numKPoints))
+   ! Set up array and descriptors for this set of integrals
+   call setupArrayDesc(vvArrayInfo, BlcsInfo, valeDim, valeDim, numKPoints)
+   call setupArrayDesc(cvArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
+   call setupArrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
 
-   ! Setup Global Arrays
-   call gaSetup(ga_coreCore,ga_valeCore,ga_coreVale,&
-         & ga_valeVale,coreDim,valeDim,numKPoints)
+   currAtomPair => atomList
 
-!   ! Initialize key matrices
-!#ifndef GAMMA
-!   coreVale      (:,:,:)      = 0.0_double
-!   valeVale      (:,:,:,:)    = 0.0_double
-!   coreCore      (:,:,:)      = 0.0_double
-!#else
-!   coreValeGamma      (:,:)   = 0.0_double
-!   valeValeGamma      (:,:,:) = 0.0_double
-!   coreCoreGamma      (:,:)   = 0.0_double
-!#endif
-
-   ! Compute the parameters for load balancing the following loop. Each
-   !   process needs to have about the same number of atom pairs, but
-   !   each atom pair (a,b) only needs to be done once. (I.e. no (b,a)).
-   !   Note that the numbers stored in minAtom and maxAtom are from within
-   !   the range 1 to numAtomSites*(numAtomSites+1)/2, *not* 1 to
-   !   numAtomSites.
-   toBalance = (numAtomSites * (numAtomSites + 1))/2
-   call MPI_Comm_size(MPI_COMM_WORLD,mpiSize,mpiErr)
-   call MPI_Comm_Rank(MPI_COMM_WORLD,mpiRank,mpiErr)
-   call loadBalMPI(toBalance,minAtom,maxAtom,mpiRank,mpiSize)
+   doLoop = .true.
 
    ! Begin atom-atom loops.
-   do atomLoop = minAtom, maxAtom
+   do while ( doLoop ) ! atomLoop = 1, size(atomPairs,1)
+      i = currAtomPair%I
+      j = currAtomPair%J
 
-      ! Get the actual atom numbers of the atoms in this atomLoop pair.
-      call findUnpackedIndices(atomLoop,i,j)
+      ! This might make more sense to do at the end of the loop. But it works
+      !    just fine here too
+      if (associated(currAtomPair%next)) then
+        currAtomPair => currAtomPair%next
+      else
+        doLoop = .false.
+      endif
 
       ! Obtain local copies of key data from larger global data structures for
       !   the first looped atom.
@@ -849,9 +819,8 @@ subroutine gaussOverlapKE(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
       ! First we must make a correction for the atom 2 lattice origin shift.
       call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
             & latticeVector,numKPoints,0)
-      call saveCurrentPair(i,j,numKPoints,currentPair,descriptVV,descriptCC,&
-            & descriptCV,descriptVC,localVV,localCC,localCV,localVC,&
-            & currentNumTotalStates)
+      call saveCurrentPair(i,j,numKPoints,currentPair,blcsInfo, vvArrayInfo,&
+            & ccArrayInfo, cvArrayInfo, atomTree)
 #else
       call saveCurrentPairGamma(i,j,currentPairGamma,descriptVV,descriptCC,&
             & descriptCV,descriptVC,localVV,localCC,localCV,localVC,&
@@ -878,13 +847,13 @@ subroutine gaussOverlapKE(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
    !   operation code signifying that a non-overlap orthogonalization should be
    !   done, and specifically that the result is for kinetic energy and that
    !   it should be written to the KE portion of the hdf5 file.
-   call ortho(2,descriptCC,descriptVV,descriptCV,descriptCV_OL,descriptVC_OL,&
-         & localCC,localVV,localCV,localCV_OL,localVC_OL,1,0,0)
+   call ortho(2, vvArrayInfo, ccArrayInfo, cvArrayInfo, cvOLArrayInfo, &
+            & blcsInfo, potDim, 0, 0)
 
    ! Deallocate the local matrices for the KE.
-   deallocate(localVV)
-   deallocate(localCC)
-   deallocate(localCV)
+   call deallocLocalArray(vvArrayInfo)
+   call deallocLocalArray(cvArrayInfo)
+   call deallocLocalArray(ccArrayInfo)
 
    ! Record the completion of this gaussian integration set.
    call timeStampEnd (9)
@@ -893,7 +862,7 @@ end subroutine gaussOverlapKE
 
 
 ! Nuclear potential three center with 1/r overlap integrals.
-subroutine gaussOverlapNP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
+subroutine gaussOverlapNP(BlcsInfo, cvOLArrayINfo, atomList, atomTree)
 
    ! Import necessary modules.
    use O_Kinds
@@ -908,24 +877,26 @@ subroutine gaussOverlapNP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
          & findLatticeVector
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
+   use O_Potential, only: potDim
+
+   ! Import necessary parallel modules
    use MPI
+   use O_Parallel
+   use O_ParallelSetup
+   use O_bstAtomPair
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
-   ! Define the passed parameters.
-   integer, dimension (9), intent(in) :: descriptCV_OL
-   integer, dimension (9), intent(in) :: descriptVC_OL
-#ifndef GAMMA
-   complex (kind=double), dimension(:,:), intent (inout) :: localCV_OL
-   complex (kind=double), dimension(:,:), intent (inout) :: localVC_OL
-#else
-   real (kind=double), dimension(:,:), intent (inout) :: localCV_OL
-   real (kind=double), dimension(:,:), intent (inout) :: localVC_OL
-#endif
+   ! Define passed parameters.
+   type(BlacsInfo), intent(in) :: BlcsInfo
+   type(ArrayInfo), intent(inout) :: cvOLArrayInfo
+   type(AtomPair), pointer :: atomList
+   type(bst_atom_pair_node), pointer :: atomTree
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
+   logical :: doLoop ! control variable for atom-atom loop
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -985,17 +956,12 @@ subroutine gaussOverlapNP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
    real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
          ! lattice points will be considered for integration.
 
-   ! Define variables for MPI
-   integer :: maxAtom, minAtom
-   integer :: toBalance
-   integer :: atomLoop
-   integer :: mpiSize,mpiRank,mpiErr
+   ! Define variables for MPI, and distributed operations
+   type(ArrayInfo) :: vvArrayInfo
+   type(ArrayInfo) :: cvArrayInfo
+   type(ArrayInfo) :: ccArrayInfo
+   type(AtomPair), pointer :: currAtomPair
 
-   ! Declare GA toolkit file handles
-   integer,allocatable,dimension(:) :: ga_coreCore
-   integer,allocatable,dimension(:) :: ga_coreVale
-   integer,allocatable,dimension(:) :: ga_valeVale
-   integer :: ga_valeCore
 
    ! Record the beginning of this phase of the setup calculation.
    call timeStampStart (10)
@@ -1013,42 +979,27 @@ subroutine gaussOverlapNP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
    allocate (currentPairGamma    (maxNumStates,maxNumStates))
 #endif
 
-   ! Allocate space to hold the GA file handles.
-   allocate(ga_coreCore(numKPoints))
-   allocate(ga_coreVale(numKPoints))
-   allocate(ga_valeVale(numKPoints))
+   ! Set up arrays and descriptors for this set of integrals
+   call setupArrayDesc(vvArrayInfo, BlcsInfo, valeDim, valeDim, numKPoints)
+   call setupArrayDesc(cvArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
+   call setupArrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
 
-   ! Setup Global Arrays
-   call gaSetup(ga_coreCore,ga_valeCore,ga_coreVale, &
-         & ga_valeVale,coreDim,valeDim,numKPoints)
+   currAtomPair => atomList
 
-!   ! Initialize key matrices
-!#ifndef GAMMA
-!   coreVale      (:,:,:)      = 0.0_double
-!   valeVale      (:,:,:,:)    = 0.0_double
-!   coreCore      (:,:,:)      = 0.0_double
-!#else
-!   coreValeGamma      (:,:)   = 0.0_double
-!   valeValeGamma      (:,:,:) = 0.0_double
-!   coreCoreGamma      (:,:)   = 0.0_double
-!#endif
-
-   ! Compute the parameters for load balancing the following loop. Each
-   !   process needs to have about the same number of atom pairs, but
-   !   each atom pair (a,b) only needs to be done once. (I.e. no (b,a)).
-   !   Note that the numbers stored in minAtom and maxAtom are from within
-   !   the range 1 to numAtomSites*(numAtomSites+1)/2, *not* 1 to
-   !   numAtomSites.
-   toBalance = (numAtomSites * (numAtomSites + 1))/2
-   call MPI_Comm_size(MPI_COMM_WORLD,mpiSize,mpiErr)
-   call MPI_Comm_Rank(MPI_COMM_WORLD,mpiRank,mpiErr)
-   call loadBalMPI(toBalance,minAtom,maxAtom,mpiRank,mpiSize)
+   doLoop = .true.
 
    ! Begin atom-atom overlap loops.
-   do atomLoop = minAtom, maxAtom
+   do while ( doLoop ) ! atomLoop = 1, size(atomPairs,1)
+      i = currAtomPair%I
+      j = currAtomPair%J
 
-      ! Get the actual atom numbers of the atoms in this atomLoop pair.
-      call findUnpackedIndices(atomLoop,i,j)
+      ! This might make more sense to do at the end of the loop. But it works
+      !   just fine here too
+      if (associated(currAtomPair%next)) then
+        currAtomPair => currAtomPair%next
+      else
+        doLoop = .false.
+      endif
 
       ! Obtain local copies of key data from larger global data structures for
       !   the first looped atom.
@@ -1283,9 +1234,8 @@ subroutine gaussOverlapNP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
       ! First we must make a correction for the atom 2 lattice origin shift.
       call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
             & latticeVector,numKPoints,0)
-      call saveCurrentPair(i,j,numKPoints,currentPair,descriptVV,descriptCC,&
-            & descriptCV,descriptVC,localVV,localCC,localCV,localVC,&
-            & currentNumTotalStates)
+      call saveCurrentPair(i,j,numKPoints,currentPair,blcsInfo, vvArrayInfo,&
+            & ccArrayInfo, cvArrayInfo, atomTree)
 #else
       call saveCurrentPairGamma(i,j,currentPairGamma,descriptVV,descriptCC,&
             & descriptCV,descriptVC,localVV,localCC,localCV,localVC,&
@@ -1312,13 +1262,13 @@ subroutine gaussOverlapNP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
    !   operation code signifying that a non-overlap orthogonalization should be
    !   done, and specifically that the result is for the nuclear potential and
    !   that it should be written to the NP portion of the hdf5 file.
-   call ortho(3,descriptCC,descriptVV,descriptCV,descriptCV_OL,descriptVC_OL,&
-         & localCC,localVV,localCV,localCV_OL,localVC_OL,1,0,0)
+   call ortho(3, vvArrayInfo, ccArrayInfo, cvArrayInfo, cvOLArrayInfo, &
+            & blcsInfo, potDim, 0, 0)
 
    ! Deallocate the local matrices for the nuclear potential overlap.
-   deallocate(localVV)
-   deallocate(localCC)
-   deallocate(localCV)
+   call deallocLocalArray(vvArrayInfo)
+   call deallocLocalArray(cvArrayInfo)
+   call deallocLocalArray(ccArrayInfo)
 
    ! Record the completion of this gaussian integration set.
    call timeStampEnd (10)
@@ -1326,7 +1276,7 @@ subroutine gaussOverlapNP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL)
 end subroutine gaussOverlapNP
 
 ! Electronic Potential three center overlap integrals.
-subroutine gaussOverlapEP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL,&
+subroutine gaussOverlapEP(BlcsInfo, cvOLArrayInfo, atomList, atomTree, &
    & potDim,currAlphaNumber,currPotElement,currPotNumber,currMultiplicity,&
    & currPotAlpha,currPotTypeNumber)
 
@@ -1343,19 +1293,21 @@ subroutine gaussOverlapEP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL,&
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
 
+   ! Import necessary parallel modules
+   use MPI
+   use O_Parallel
+   use O_ParallelSetup
+   use O_bstAtomPair
+
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define the passed parameters.
-   integer, dimension (9), intent(in) :: descriptCV_OL
-   integer, dimension (9), intent(in) :: descriptVC_OL
-#ifndef GAMMA
-   complex (kind=double), dimension(:,:), intent (inout) :: localCV_OL
-   complex (kind=double), dimension(:,:), intent (inout) :: localVC_OL
-#else
-   real (kind=double), dimension(:,:), intent (inout) :: localCV_OL
-   real (kind=double), dimension(:,:), intent (inout) :: localVC_OL
-#endif
+   type(BlacsInfo), intent(in) :: BlcsInfo
+   type(ArrayInfo), intent(inout) :: cvOLArrayInfo
+   type(AtomPair), pointer :: atomList
+   type(bst_atom_pair_node), pointer :: atomTree
+   integer, intent(in) :: potDim
    integer, intent(in) :: currPotNumber
    integer, intent(in) :: currPotElement
    integer, intent(in) :: currAlphaNumber
@@ -1365,6 +1317,7 @@ subroutine gaussOverlapEP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL,&
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
+   logical :: doLoop ! Control variable for atom-atom loop
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -1424,21 +1377,16 @@ subroutine gaussOverlapEP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL,&
    real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
          ! lattice points will be considered for integration.
 
-   ! Define variables for MPI
-   integer :: maxAtom, minAtom
-   integer :: toBalance
-   integer :: atomLoop
-   integer :: mpiSize,mpiRank,mpiErr
+   ! Define variables for MPI, and distributed operations
+   type(ArrayInfo) :: vvArrayInfo
+   type(ArrayInfo) :: cvArrayInfo
+   type(ArrayInfo) :: ccArrayInfo
+   type(AtomPair), pointer :: currAtomPair
 
    ! Define variables for gauss integrals
    integer :: l1l2Switch
    integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
 
-   ! Declare GA toolkit file handles
-   integer,allocatable, dimension(:) :: ga_coreCore
-   integer,allocatable, dimension(:) :: ga_coreVale
-   integer,allocatable, dimension(:) :: ga_valeVale
-   integer :: ga_valeCore
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -1453,42 +1401,27 @@ subroutine gaussOverlapEP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL,&
    allocate (currentPairGamma    (maxNumStates,maxNumStates))
 #endif
 
-   ! Allocate space to hold the GA file handles.
-   allocate(ga_coreCore(numKPoints))
-   allocate(ga_coreVale(numKPoints))
-   allocate(ga_valeVale(numKPoints))
+   ! Setup up arrays and descriptors for this set of integrals
+   call setupArrayDesc(vvArrayInfo, BlcsInfo, valeDim, valeDim, numKPoints)
+   call setupArrayDesc(cvArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
+   call setupArrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
 
-   ! Setup Global Arrays
-   call gaSetup(ga_coreCore,ga_valeCore,ga_coreVale, &
-         & ga_valeVale, coreDim, valeDim, numKPoints)
+   currAtomPair => atomList
 
-!   ! Initialize key matrices
-!#ifndef GAMMA
-!   coreVale      (:,:,:)      = 0.0_double
-!   valeVale      (:,:,:,:)    = 0.0_double
-!   coreCore      (:,:,:)      = 0.0_double
-!#else
-!   coreValeGamma      (:,:)   = 0.0_double
-!   valeValeGamma      (:,:,:) = 0.0_double
-!   coreCoreGamma      (:,:)   = 0.0_double
-!#endif
-
-   ! Compute the parameters for load balancing the following loop. Each
-   !   process needs to have about the same number of atom pairs, but
-   !   each atom pair (a,b) only needs to be done once. (I.e. no (b,a)).
-   !   Note that the numbers stored in minAtom and maxAtom are from within
-   !   the range 1 to numAtomSites*(numAtomSites+1)/2, *not* 1 to
-   !   numAtomSites.
-   toBalance = (numAtomSites * (numAtomSites + 1))/2
-   call MPI_Comm_size(MPI_COMM_WORLD,mpiSize,mpiErr)
-   call MPI_Comm_Rank(MPI_COMM_WORLD,mpiRank,mpiErr)
-   call loadBalMPI(toBalance,minAtom,maxAtom,mpiRank,mpiSize)
+   doLoop = .true.
 
    ! Begin atom-atom overlap loops.
-   do atomLoop = minAtom, maxAtom
+   do while ( doLoop ) ! atomLoop = 1, size(atomPairs,1)
+      i = currAtomPair%I
+      j = currAtomPair%J
 
-      ! Get the actual atom numbers of the atoms in this atomLoop pair.
-      call findUnpackedIndices(atomLoop,i,j)
+      ! This might make more sense to do at the end of the loop. But it works
+      ! just fine here too
+      if (associated(currAtomPair%next)) then
+        currAtomPair => currAtomPair%next
+      else
+        doLoop = .false.
+      endif
 
       ! Obtain local copies of key data from larger global data structures for
       !   the first looped atom.
@@ -1561,16 +1494,16 @@ subroutine gaussOverlapEP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL,&
          !   lattice points based on distance.
          if (cellSizesReal(k) > maxLatticeRadius) exit
 
-         ! For the electronic potential we have one more test to prevent
-         !   other potential terms of the current potential type from
-         !   passing this point.
-         if (checkElecPotInteraction(i,j,k) == 1) then
-            cycle
-         else
-            ! Assume now that this alpha will not have any interactions
-            !   with this cell/atom/atom set.
-            elecPotInteraction = 0
-         endif
+!         ! For the electronic potential we have one more test to prevent
+!         !   other potential terms of the current potential type from
+!         !   passing this point.
+!         if (checkElecPotInteraction(i,j,k) == 1) then
+!            cycle
+!         else
+!            ! Assume now that this alpha will not have any interactions
+!            !   with this cell/atom/atom set.
+!            elecPotInteraction = 0
+!         endif
 
          ! Obtain the position of atom #2 shifted by the current lattice.
          shiftedAtomPos(:) = currentPosition(:,2) + latticeVector(:) + &
@@ -1736,9 +1669,8 @@ subroutine gaussOverlapEP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL,&
       ! First we must make a correction for the atom 2 lattice origin shift.
       call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
             & latticeVector,numKPoints,0)
-      call saveCurrentPair(i,j,numKPoints,currentPair,descriptVV,descriptCC,&
-            & descriptCV,descriptVC,localVV,localCC,localCV,localVC,&
-            & currentNumTotalStates)
+      call saveCurrentPair(i,j,numKPoints,currentPair,blcsInfo, vvArrayInfo,&
+            & ccArrayInfo, cvArrayInfo, atomTree)
 #else
       call saveCurrentPairGamma(i,j,currentPairGamma,descriptVV,descriptCC,&
             & descriptCV,descriptVC,localVV,localCC,localCV,localVC,&
@@ -1766,18 +1698,18 @@ subroutine gaussOverlapEP(descriptCV_OL,descriptVC_OL,localCV_OL,localVC_OL,&
    !   operation code signifying that a non-overlap orthogonalization should be
    !   done, and specifically that the result is for the electronic potential
    !   and that it should be written to the EP portion of the hdf5 file.
-   call ortho(4,descriptCC,descriptVV,descriptCV,descriptCV_OL,descriptVC_OL,&
-         & localCC,localVV,localCV,localCV_OL,localVC_OL,potDim,&
-         & currPotTypeNumber,currAlphaNumber)
-
-   ! We don't deallocate anything at this point because other electronic
-   !   potential terms need to be computed.
+   call ortho(4, vvArrayInfo, ccArrayInfo, cvArrayInfo, cvOLArrayInfo, &
+            & blcsInfo, potDim, 0, 0)
+  
+   ! Deallocate the local matrices
+   call deallocLocalArray(vvArrayInfo)
+   call deallocLocalArray(cvArrayInfo)
+   call deallocLocalArray(ccArrayInfo)
 
 end subroutine gaussOverlapEP
 
 
-subroutine elecPotGaussOverlap(descriptCV_OL,descriptVC_OL,localCV_OL,&
-      & localVC_OL)
+subroutine elecPotGaussOverlap(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
 
    ! Import the necessary modules
    use O_Kinds
@@ -1789,22 +1721,22 @@ subroutine elecPotGaussOverlap(descriptCV_OL,descriptVC_OL,localCV_OL,&
    use O_PotSites, only: potSites, numPotSites
    use O_Potential, only: potDim
 
+   ! Import necessary parallel modules
+   use MPI
+   use O_Parallel
+   use O_ParallelSetup
+   use O_bstAtomPair
+
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define the passed parameters.
-   integer, dimension (9), intent(in) :: descriptCV_OL
-   integer, dimension (9), intent(in) :: descriptVC_OL
-#ifndef GAMMA
-   complex (kind=double), dimension(:,:), intent (inout) :: localCV_OL
-   complex (kind=double), dimension(:,:), intent (inout) :: localVC_OL
-#else
-   real (kind=double), dimension(:,:), intent (inout) :: localCV_OL
-   real (kind=double), dimension(:,:), intent (inout) :: localVC_OL
-#endif
+   type(BlacsInfo) :: BlcsInfo
+   type(ArrayInfo) :: cvOLArrayInfo
+   type(AtomPair), pointer :: atomList
+   type(bst_atom_pair_node), pointer :: atomTree
 
    ! Define local variables.
-   integer mpiRank,mpiErr
    integer :: numAlphas
    integer :: currPotTypeNumber
    integer :: currPotNumber
@@ -1816,6 +1748,8 @@ subroutine elecPotGaussOverlap(descriptCV_OL,descriptVC_OL,localCV_OL,&
    ! Define local variables for logging and loop control
    integer :: i,j ! Loop index variables
    integer :: currentIterCount
+
+   integer :: mpierr
 
    ! Make a time stamp.
    call timeStampStart (11)
@@ -1848,10 +1782,10 @@ subroutine elecPotGaussOverlap(descriptCV_OL,descriptVC_OL,localCV_OL,&
 
          ! Calculate the overlap for the current alpha of the current type
          !   with all the alphas of every pair of atoms.
-         call MPI_Barrier(mpierr)
-         call gaussOverlapEP(descriptCV_OL,descriptVC_OL,localCV_OL,&
-               & localVC_OL,potDim,currAlphaNumber,currPotElement,&
-               & currPotNumber,currMultiplicity,currPotAlpha,currPotTypeNumber)
+         call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+         call gaussOverlapEP(BlcsInfo, cvOLArrayInfo, atomList, atomTree,&
+               & potDim,currAlphaNumber,currPotElement, currPotNumber, &
+               & currMultiplicity,currPotAlpha,currPotTypeNumber)
 
          ! Record that this loop has finished
          if (mod(currentIterCount,10) .eq. 0) then
@@ -2203,7 +2137,7 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
 
 end subroutine electronicPE
 
-subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
+subroutine orthoOL(vvInfo, ccInfo, cvOLInfo, blcsinfo, potDim)
 !  orthoOL(descriptCC,descriptVV,descriptCV_OL,descriptVC_OL,localCC,&
 !      & localVV,localCV_OL,localVC_OL,potDim)
 
@@ -2216,38 +2150,34 @@ subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
 
    ! Import parallel modules
    use MPI
-   use O_ParallelSubs
+   use O_Parallel
+   use O_ParallelSetup
+   use O_bstAtomPair
 
    ! Make sure that no funny variables are defined.
    implicit none
 
    ! Define passed variables.
-   type(ArrayInfo), intent(in) :: vvArrayInfo, ccArrInfo, cvOLArrInfo
+   type(ArrayInfo), intent(inout) :: vvInfo, ccInfo, cvOLInfo
    type(BlacsInfo), intent(in) :: blcsinfo
    integer, intent(in) :: potDim
-!#ifndef GAMMA
-!   complex (kind=double), dimension (:,:,:), intent (inout) :: localCC
-!   complex (kind=double), dimension (:,:,:), intent (inout) :: localVV
-!   complex (kind=double), dimension (:,:,:), intent (inout) :: localCV_OL
-!   complex (kind=double), dimension (:,:,:), intent (inout) :: localVC_OL
-!#else
-!   real (kind=double), dimension (:,:,:), intent (inout) :: localCC
-!   real (kind=double), dimension (:,:,:), intent (inout) :: localVV
-!   real (kind=double), dimension (:,:,:), intent (inout) :: localCV_OL
-!   real (kind=double), dimension (:,:,:), intent (inout) :: localVC_OL
-!#endif
 
    ! Define local variables.
    integer :: i,j,k
    integer :: hdferr
    integer :: currIndex
-   integer :: mpiRank, mpiErr, mpidtype, commDataSize
    integer, dimension(MPI_STATUS_SIZE) :: mpistatus
    type(ArrayInfo) :: vcTempInfo
+   type(ArrayInfo) :: vcInfo
    type(ArrayInfo) :: tArrInfo
    type(BlacsInfo) :: tBlcsInfo
-   integer :: dcount
+   integer :: dcount, mpidtype, mpierr
    integer, dimension(7) :: sdata
+
+   ! Setup the local array info for the valeCore matrix formed by the
+   ! conjugate transpose of cvOL
+   call setupArrayDesc(vcInfo, blcsinfo, valeDim, coreDim, numKPoints)
+   call pctrans(cvOLInfo, vcInfo)
 
    ! Setup the local array info for the temporary valeCore matrix used in
    ! these subroutines.
@@ -2261,18 +2191,17 @@ subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
 
 #ifndef GAMMA
 
-         ! Initialize the localVC_temp to zero.
-         localVC_temp(:,:) = (0.0_double,0.0_double,double)
+         ! Initialize the vcTempInfo%local array to zero.
+         vcTempInfo%local(:,:,:) = 0.0_double
 
          ! Subtract 2 * the product of (coreValeOL**H)(coreValeOL) from the
          !   valeVale matrix. See documentation in intgOrtho.F90 for details.
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
          call valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo, vvInfo, i)
-
 
          ! Form product of (valeCoreOL)(coreCore) and store into the temp
          !   matrix (valeCore_temp).
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
          call valeCoreCoreCore(valeDim, coreDim, vcInfo, ccInfo, vcTempInfo, i)
          !call valeCoreCoreCore (valeDim,coreDim,descriptVC,descriptCC,&
          !      & descriptVC_temp,localVC(:,:,i),localCC(:,:,i),localVC_temp)
@@ -2280,48 +2209,53 @@ subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
          ! Finally compute the product of (valeCore_temp)(coreValeOL) and add
          !   it to the (valeVale). This completes the orthogonalization of the
          !   two-center overlap VV matrix against the core.
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call makeValeVale (valeDim, coreDim, vcTempInfo, cvInfo, vvInfo, i)
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+         call makeValeVale (valeDim, coreDim, vcTempInfo, cvOLInfo, vvInfo, i)
          !call makeValeVale (valeDim,coreDim,descriptVC_temp,decriptCV,&
          !      & descriptVV,localVC_temp,localCV(:,:,i),localVV(:,:,i))
 #else
 
-         ! Initialize the localVC_temp to zero.
-         localVC_temp(:,:) = 0.0_double
+         ! Initialize the vcTempInfo%local array to zero.
+         vcTempInfo%local(:,:) = 0.0_double
 
          ! Subtract 2 * the product of (coreValeOL**T)(coreValeOL) from the
          !   valeVale matrix. See documentation in intgOrtho.F90 for details.
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call valeCoreCoreValeOLGamma (valeDim,coreDim,descriptCV_OL,&
-               & descriptVV,localCV_OL,localVV)
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+         call valeCoreCoreValeOLGamma(valeDim,coreDim,cvOLInfo,vvInfo,i)
+         !call valeCoreCoreValeOLGamma (valeDim,coreDim,descriptCV_OL,&
+         !      & descriptVV,localCV_OL,localVV)
 
          ! Form product of (valeCoreOL)(coreCore) and store into the temp
          !   matrix (valeCore_temp).
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call valeCoreCoreCoreGamma (valeDim,coreDim,descriptVC,descriptCC,&
-               & descriptVC_temp,localVC,localCC,localVC_temp)
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+         call valeCoreCoreCoreGamma(valeDim,coreDim,vcInfo,ccInfo,vcTempInfo,i)
+         !call valeCoreCoreCoreGamma (valeDim,coreDim,descriptVC,descriptCC,&
+         !      & descriptVC_temp,localVC,localCC,localVC_temp)
 
          ! Finally compute the product of (valeCore_temp)(coreValeOL) and add
          !   it to the (valeVale). This completes the orthogonalization of the
          !   two-center overlap VV matrix against the core.
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call makeValeValeGamma (valeDim,coreDim,descriptVC_temp,decriptCV,&
-               & descriptVV,localVC_temp,localCV,localVV)
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+         call makeValeValeGamma(valeDim,coreDim,vcTempInfo,cvInfo,vvInfo,i)
+         !call makeValeValeGamma (valeDim,coreDim,descriptVC_temp,decriptCV,&
+         !      & descriptVV,localVC_temp,localCV,localVV)
 #endif
       endif
-   ! Deallocate the localVC_temp
-   call deallocLocalArray(vcTempInfo)
-
    enddo
+
+   ! Deallocate the vcTempINfo
+   call deallocLocalArray(vcTempInfo)
+   ! Deallocate the conjugate transpose of cvInfo
+   call deallocLocalArray(vcInfo)
 
 #ifndef gamma
    mpidtype = MPI_DOUBLE_COMPLEX
 #else
    mpidtype = MPI_DOUBLE_PRECISION
 #endif
-   commDataSize = size(vvInfo%local
+
    call MPI_Barrier(MPI_COMM_WORLD, mpierr)
-   if (mpiRank == 0) then
+   if (blcsInfo%mpiRank == 0) then
       ! Write out Process 0's information
       call writeValeVale(vvInfo, blcsInfo, numKPoints, potDim, 0, 0, 1)
    endif
@@ -2330,29 +2264,30 @@ subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
    ! Communicate with other processes and write out their information
    do i=1,blcsinfo%mpisize-1
      ! Other processes send local array
-     if (mpirank == i) then
+     if (blcsInfo%mpirank == i) then
        ! First we need information from the process about the process row, and
        ! column. Also, we need to know the size of the array to allocate.
-       sdata = (/blcsInfo%context,
-                 blcsInfo%prows,
-                 blcsInfo%pcols,
-                 blcsInfo%myprow,
-                 blcsInfo%mypcol,
-                 blcsInfo%mpirank,
-                 blcsInfo%mpisize/)
-       call MPI_Send(sdata, 7, MPI_INTEGER, 0, tag, &
+       sdata = (/blcsInfo%context, &
+               & blcsInfo%prows, &
+               & blcsInfo%pcols, &
+               & blcsInfo%myprow, &
+               & blcsInfo%mypcol, &
+               & blcsInfo%mpirank, &
+               & blcsInfo%mpisize/)
+       call MPI_Send(sdata, 7, MPI_INTEGER, 0, 0, &
          & MPI_COMM_WORLD, mpierr)
 
-       dcount=size(arrinfo%local,1)*size(arrinfo%local,2)*size(arrinfo%local,3)
+       dcount= size(vvInfo%local,1) * size(vvInfo%local,2) &
+              & * size(vvInfo%local,3)
        ! Now we can send the builk of the data
-       call MPI_Send(vvInfo%local, dcount, mpidtype, 0, tag, &
+       call MPI_Send(vvInfo%local, dcount, mpidtype, 0, 0, &
          & MPI_COMM_WORLD, mpierr)
      endif
 
      ! Process zero recieves array and writes to disk
-     if (mpirank == 0) then
+     if (blcsInfo%mpirank == 0) then
        ! First receive information about the process and local array
-       call MPI_Recv(sdata, 7, MPI_INTEGER, i, tag, &
+       call MPI_Recv(sdata, 7, MPI_INTEGER, i, 0, &
          & MPI_COMM_WORLD, mpistatus, mpierr)
 
        tBlcsInfo%context = sdata(1)
@@ -2362,12 +2297,13 @@ subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
        tBlcsInfo%mypcol = sdata(5)
        tBlcsInfo%mpirank = sdata(6)
        tBlcsInfo%mpisize = sdata(7)
-       call setupArrayDesc(tArrInfo)
+       call setupArrayDesc(tArrInfo, BlcsInfo, valeDim, valeDim, numKPoints)
        
-       dcount=size(arrinfo%local,1)*size(arrinfo%local,2)*size(arrinfo%local,3)
+       dcount= size(tArrInfo%local,1) * size(tArrInfo%local,2) &
+              & * size(tArrInfo%local,3)
        ! Receive the local array information
        call MPI_Recv(tArrInfo%local, dcount, mpidtype, i, &
-         & tag, MPI_COMM_WORLD, mpistatus, mpierr)
+         & 0, MPI_COMM_WORLD, mpistatus, mpierr)
 
        call writeValeVale(tArrInfo, tBlcsInfo, numKPoints, potDim, 0, 0, 1)
        call deallocLocalArray(tArrInfo)
@@ -2380,9 +2316,8 @@ subroutine orthoOL(vvArrayInfo, ccArrInfo, cvOLArrInfo, blcsinfo, potDim)
 end subroutine orthoOL
 
 
-subroutine ortho (opCode,descriptCC,descriptVV,descriptCV,descriptCV_OL,&
-      & descriptVC_OL,localCC,localVV,localCV,localCV_OL,localVC_OL,potDim,&
-      & currPotTypeNumber,currAlphaNumber)
+subroutine ortho (opCode, vvInfo, ccInfo, cvInfo, cvOLInfo, blcsInfo, potDIm, &
+                & currPotTypeNumber,currAlphaNumber)
 
    ! Use necessary modules.
    use O_Kinds
@@ -2393,29 +2328,19 @@ subroutine ortho (opCode,descriptCC,descriptVV,descriptCV,descriptCV_OL,&
          & atomPotOverlap_did, atomDims
    use O_Orthogonalization
 
+   ! Import parallel modules
+   use MPI
+   use O_Parallel
+   use O_ParallelSetup
+   use O_bstAtomPair
+
    ! Make sure that no funny variables are defined.
    implicit none
 
    ! Define passed dummy arguments.
    integer, intent(in) :: opCode
-   integer, dimension(9), intent(in) :: descriptCC
-   integer, dimension(9), intent(in) :: descriptVV
-   integer, dimension(9), intent(in) :: descriptCV
-   integer, dimension(9), intent(in) :: descriptCV_OL
-   integer, dimension(9), intent(in) :: descriptVC_OL
-#ifndef GAMMA
-   complex (kind=double), dimension (:,:,:), intent (inout) :: localCC
-   complex (kind=double), dimension (:,:,:), intent (inout) :: localVV
-   complex (kind=double), dimension (:,:,:), intent (inout) :: localCV
-   complex (kind=double), dimension (:,:,:), intent (inout) :: localCV_OL
-   complex (kind=double), dimension (:,:,:), intent (inout) :: localVC_OL
-#else
-   real (kind=double), dimension (:,:,:), intent (inout) :: localCC
-   real (kind=double), dimension (:,:,:), intent (inout) :: localVV
-   real (kind=double), dimension (:,:,:), intent (inout) :: localCV
-   real (kind=double), dimension (:,:,:), intent (inout) :: localCV_OL
-   real (kind=double), dimension (:,:,:), intent (inout) :: localVC_OL
-#endif
+   type(ArrayInfo), intent(inout) :: vvInfo, ccInfo, cvInfo, cvOLInfo
+   type(BlacsInfo), intent(in) :: blcsInfo
    integer, intent(in) :: potDim
    integer, intent(in) :: currPotTypeNumber
    integer, intent(in) :: currAlphaNumber
@@ -2424,17 +2349,22 @@ subroutine ortho (opCode,descriptCC,descriptVV,descriptCV,descriptCV_OL,&
    integer :: i,j,k
    integer :: hdferr
    integer :: currIndex
-   integer :: mpiRank, mpiErr
-   integer, dimension (9) :: descriptVC_temp
-#ifndef GAMMA
-   complex (kind=double), dimension (:,:) :: localVC_temp
-#else
-   real (kind=double), dimension (:,:) :: localVC_temp
-#endif
+   integer, dimension(MPI_STATUS_SIZE) :: mpistatus
+   type(ArrayInfo) :: vcTempInfo
+   type(ArrayInfo) :: vcInfo
+   type(ArrayInfo) :: tArrInfo
+   type(BlacsInfo) :: tBlcsInfo
+   integer :: dcount, mpidtype, mpierr
+   integer, dimension(7) :: sdata
 
-   ! Allocate space for the localVC_temp.  (Needs to be the same size as the
-   !   localVC.)
-   allocate (localVC_temp(,))
+   ! Setup the local array info for the valeCore matrix formed by the
+   ! conjugate transpose of cvOL
+   call setupArrayDesc(vcInfo, blcsinfo, valeDim, coreDim, numKPoints)
+   call pctrans(cvInfo, vcInfo)
+
+   ! Setup the local array info for the temporary valeCore matrix used in these
+   ! subroutines
+   call setupArrayDesc(vcTempInfo, blcsInfo, valeDim, coreDim, numKPoints)
 
    do i = 1, numKPoints
 
@@ -2444,90 +2374,137 @@ subroutine ortho (opCode,descriptCC,descriptVV,descriptCV,descriptCV_OL,&
 
 #ifndef GAMMA
 
-         ! Initialize the localVC_temp to zero.
-         localVC_temp(:,:) = (0.0_double,0.0_double,double)
+         ! Initialize the vcTempInfo%local array to zero.
+         vcTempInfo%local(:,:,:) = 0.0_double
 
          ! Subtract the product of (coreVale**H)(coreValeOL) and the product of
          !   (coreVale_OL**H)(coreVale) from the valeVale matrix. See
          !   documentation about non-overlap orthogonalization in
          !   intgOrtho.F90 for details.
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call valeCoreCoreVale (valeDim,coreDim,descriptCV_OL,descriptCV,&
-               & descriptVV,localCV_OL(:,:,i),localCV(:,:,i),localVV(:,:,i))
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+         call valeCoreCoreVale(valeDim, coreDim, cvOLInfo, cvInfo, vvInfo, i)
+         !call valeCoreCoreVale (valeDim,coreDim,descriptCV_OL,descriptCV,&
+         !      & descriptVV,localCV_OL(:,:,i),localCV(:,:,i),localVV(:,:,i))
 
          ! Form product of (valeCoreOL)(coreCore) and store into the temp
          !   matrix (valeCore_temp).
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call valeCoreCoreCore (valeDim,coreDim,descriptVC_OL,descriptCC,&
-               & descriptVC_temp,localVC_OL(:,:,i),localCC(:,:,i),localVC_temp)
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+         call valeCoreCoreCore(valeDim, coreDim, vcInfo, ccInfo, vcTempInfo, i)
+         !call valeCoreCoreCore (valeDim,coreDim,descriptVC_OL,descriptCC,&
+         !      & descriptVC_temp,localVC_OL(:,:,i),localCC(:,:,i),localVC_temp)
 
          ! Finally compute the product of (valeCore_temp)(coreValeOL) and add
          !   it to the (valeVale). This completes the orthogonalization of the
          !   current (non-overlap) VV matrix against the core.
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call makeValeVale (valeDim,coreDim,descriptVC_temp,decriptCV_OL,&
-               & descriptVV,localVC_temp,localCV_OL(:,:,i),localVV(:,:,i))
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+         call makeValeVale (valeDim, coreDim, vcTempInfo, cvInfo, vvInfo, i)
+         !call makeValeVale (valeDim,coreDim,descriptVC_temp,decriptCV_OL,&
+         !      & descriptVV,localVC_temp,localCV_OL(:,:,i),localVV(:,:,i))
 
 #else
          
-         ! Initialize the localVC_temp to zero.
-         localVC_temp(:,:) = 0.0_double
+         ! Initialize the vcTempInfo%local array to zero.
+         vcTempInfo%local(:,:) = 0.0_double
 
          ! Subtract the product of (coreVale**T)(coreValeOL) and the product of
          !   (coreVale_OL**T)(coreVale) from the valeVale matrix. See
          !   documentation about non-overlap orthogonalization in
          !   intgOrtho.F90 for details.
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call valeCoreCoreValeGamma (valeDim,coreDim,descriptCV_OL,descriptCV,&
-               & descriptVV,localCV_OL(:,:,i),localCV(:,:,i),localVV(:,:,i))
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+         call valeCoreCoreValeGamma(valedim,coredim,cvOLInfo,cvInfo,vvInfo,i)
+         !call valeCoreCoreValeGamma (valeDim,coreDim,descriptCV_OL,descriptCV,&
+         !      & descriptVV,localCV_OL(:,:,i),localCV(:,:,i),localVV(:,:,i))
 
          ! Form product of (valeCoreOL)(coreCore) and store into the temp
          !   matrix (valeCore_temp).
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call valeCoreCoreCoreGamma (valeDim,coreDim,descriptVC_OL,descriptCC,&
-               & descriptVC_temp,localVC_OL(:,:,i),localCC(:,:,i),localVC_temp)
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+         call valeCoreCoreCoreGamma(valeDim,coreDim,vcInfo,ccInfo,vcTempInfo,i)
+         !call valeCoreCoreCoreGamma (valeDim,coreDim,descriptVC_OL,descriptCC,&
+         !      & descriptVC_temp,localVC_OL(:,:,i),localCC(:,:,i),localVC_temp)
 
          ! Finally compute the product of (valeCore_temp)(coreValeOL) and add
          !   it to the (valeVale). This completes the orthogonalization of the
          !   current (non-overlap) VV matrix against the core.
-         call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
-         call makeValeValeGamma (valeDim,coreDim,descriptVC_temp,decriptCV_OL,&
-               & descriptVV,localVC_temp,localCV_OL(:,:,i),localVV(:,:,i))
+         call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+         call makeValeValeGamma(valeDim,coreDim,vcTempInfo,cvInfo,vvInfo,i)
+         !call makeValeValeGamma (valeDim,coreDim,descriptVC_temp,decriptCV_OL,&
+         !      & descriptVV,localVC_temp,localCV_OL(:,:,i),localVV(:,:,i))
 
 #endif
-   endif
+      endif
+
+   enddo
+
+   ! Deallocate the vcTempINfo
+   call deallocLocalArray(vcTempInfo)
+   ! Deallocate the conjugate transpose of cvInfo
+   call deallocLocalArray(vcInfo)
 
 
-   ! Deallocate matrices that are no longer necessary.
-#ifndef GAMMA
-   call MPI_Comm_rank(MPI_COMM_WORLD,mpiRank,mpiErr)
-   if (mpiRank == 0) then
-      select case(opCode)
-      case(2:3)
-         call writeValeVale(ga_valeVale,opCode,numKPoints,potDim, &
-               & 0,0,valeDim)
-      case(4)
-         call writeValeVale(ga_valeVale,opCode,numKPoints,potDim,&
-               & currPotTypeNumber,currAlphaNumber,valeDim)
-       end select
-   endif
+#ifndef gamma
+   mpidtype = MPI_DOUBLE_COMPLEX
 #else
-   call MPI_Comm_rank(MPI_COMM_WORLD,mpiRank,mpiErr)
-   if (mpiRank == 0) then
-      select case(opCode)
-      case(2:3)
-         call writeValeValeGamma(ga_valeVale,opCode,numKPoints,potDim, &
-               & 0,0,valeDim)
-      case(4)
-         call writeValeValeGamma(ga_valeVale,opCode,numKPoints,potDim,&
-               & currPotTypeNumber,currAlphaNumber,valeDim)
-       end select
-   endif
-   call MPI_BARRIER(MPI_WORLD_COMM,mpiErr)
+   mpidtype = MPI_DOUBLE_PRECISION
 #endif
 
-   ! Deallocate the localVC_temp
-   deallocate (localVC_temp)
+   call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+   if (blcsInfo%mpiRank == 0) then
+      ! Write out Process 0's information
+      call writeValeVale(vvInfo, blcsInfo, numKPoints, potDim, 0, 0, 1)
+   endif
+
+   call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+   ! Communicate with other processes and write out their information
+   do i=1,blcsinfo%mpisize-1
+     ! Other processes send local array
+     if (blcsInfo%mpirank == i) then
+       ! First we need information from the process about the process row, and
+       ! column. Also, we need to know the size of the array to allocate.
+       sdata = (/blcsInfo%context, &
+               & blcsInfo%prows, &
+               & blcsInfo%pcols, &
+               & blcsInfo%myprow, &
+               & blcsInfo%mypcol, &
+               & blcsInfo%mpirank, &
+               & blcsInfo%mpisize/)
+       call MPI_Send(sdata, 7, MPI_INTEGER, 0, 0, &
+         & MPI_COMM_WORLD, mpierr)
+
+       dcount= size(vvInfo%local,1) * size(vvInfo%local,2) &
+              & * size(vvInfo%local,3)
+       ! Now we can send the builk of the data
+       call MPI_Send(vvInfo%local, dcount, mpidtype, 0, 0, &
+         & MPI_COMM_WORLD, mpierr)
+     endif
+
+     ! Process zero recieves array and writes to disk
+     if (blcsInfo%mpirank == 0) then
+       ! First receive information about the process and local array
+       call MPI_Recv(sdata, 7, MPI_INTEGER, i, 0, &
+         & MPI_COMM_WORLD, mpistatus, mpierr)
+
+       tBlcsInfo%context = sdata(1)
+       tBlcsInfo%prows = sdata(2)
+       tBlcsInfo%pcols = sdata(3)
+       tBlcsInfo%myprow = sdata(4)
+       tBlcsInfo%mypcol = sdata(5)
+       tBlcsInfo%mpirank = sdata(6)
+       tBlcsInfo%mpisize = sdata(7)
+       call setupArrayDesc(tArrInfo, BlcsInfo, valeDim, valeDim, numKPoints)
+       
+       dcount= size(tArrInfo%local,1) * size(tArrInfo%local,2) &
+              & * size(tArrInfo%local,3)
+       ! Receive the local array information
+       call MPI_Recv(tArrInfo%local, dcount, mpidtype, i, &
+         & 0, MPI_COMM_WORLD, mpistatus, mpierr)
+
+       call writeValeVale(tArrInfo, tBlcsInfo, numKPoints, potDim, 0, 0, 1)
+       call deallocLocalArray(tArrInfo)
+     endif
+
+     call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+   enddo
+
 
 end subroutine ortho
 

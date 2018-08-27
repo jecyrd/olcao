@@ -652,20 +652,49 @@ subroutine neutralAndNuclearQPot()
    !   local buffer that were actually used should be sent explicitly so that
    !   we don't spend extra time sending and accumulating a bunch of zeros.
    call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
-   call MPI_REDUCE(nonLocalNeutQPot(:,:),nonLocalNeutQPot(:,:),potDim*potDim,&
-         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   if (mpiRank == 0) then
+     call MPI_REDUCE(MPI_IN_PLACE,nonLocalNeutQPot(:,:),potDim*potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   else
+     call MPI_REDUCE(nonLocalNeutQPot(:,:),nonLocalNeutQPot(:,:),potDim*potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   endif
+
    call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
-   call MPI_REDUCE(localNeutQPot(:,:),localNeutQPot(:,:),potDim*potDim,&
-         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   if (mpiRank == 0) then
+     call MPI_REDUCE(MPI_IN_PLACE,localNeutQPot(:,:),potDim*potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   else
+     call MPI_REDUCE(localNeutQPot(:,:),localNeutQPot(:,:),potDim*potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   endif
+
    call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
-   call MPI_REDUCE(nonLocalNucQPot(:),nonLocalNucQPot(:),potDim,&
-         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   if (mpiRank == 0) then
+     call MPI_REDUCE(MPI_IN_PLACE,nonLocalNucQPot(:),potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   else
+     call MPI_REDUCE(nonLocalNucQPot(:),nonLocalNucQPot(:),potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   endif
+
    call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
-   call MPI_REDUCE(localNucQPot(:),localNucQPot(:),potDim,&
-         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   if (mpiRank == 0) then
+     call MPI_REDUCE(MPI_IN_PLACE,localNucQPot(:),potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   else
+     call MPI_REDUCE(localNucQPot(:),localNucQPot(:),potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   endif
+
    call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
-   call MPI_REDUCE(potAlphaOverlap(:,:),potAlphaOverlap(:,:),potDim*potDim,&
-         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   if (mpiRank == 0) then
+     call MPI_REDUCE(MPI_IN_PLACE,potAlphaOverlap(:,:),potDim*potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   else
+     call MPI_REDUCE(potAlphaOverlap(:,:),potAlphaOverlap(:,:),potDim*potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   endif
 
    call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
    if (mpiRank==0) then
@@ -1091,9 +1120,15 @@ subroutine residualQ()
    !   to the ga_accumulation subroutine so that we don't spend extra time
    !   sending and accumulating a bunch of zeros.
    call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
-   call MPI_REDUCE(nonLocalResidualQ(:,:),nonLocalResidualQ(:,:),&
-         & numPotTypes*potDim,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,&
-         & mpiErr)
+   if (mpiRank == 0) then
+     call MPI_REDUCE(MPI_IN_PLACE,nonLocalResidualQ(:,:),&
+           & numPotTypes*potDim,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,&
+           & mpiErr)
+   else
+     call MPI_REDUCE(nonLocalResidualQ(:,:),nonLocalResidualQ(:,:),&
+           & numPotTypes*potDim,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,&
+           & mpiErr)
+   endif
 
    call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
    if (mpiRank==0) then

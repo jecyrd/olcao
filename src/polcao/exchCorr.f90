@@ -786,8 +786,8 @@ subroutine makeECMeshAndOverlap()
       enddo
 
       ! Accumulate the exchCorrOverlap results into the global array.
-      call MPI_REDUCE(exchCorrOverlap(:,:),exchCorrOverlap(:,:),potDim*potDim,&
-            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+      !call MPI_REDUCE(exchCorrOverlap(:,:),exchCorrOverlap(:,:),potDim*potDim,&
+      !      & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
 
       ! Have process zero store its own results in HDF5 format and then collect
       !   results for the radialWeight and exchRhoOp one at a time and store
@@ -851,25 +851,33 @@ subroutine makeECMeshAndOverlap()
                & MPI_DOUBLE_PRECISION,0,2,MPI_COMM_WORLD,mpiErr)
 
          ! Send the exchRhoOp to process zero.
-         !call MPI_RECV (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
-         !      & MPI_DOUBLE_PRECISION,0,3,MPI_COMM_WORLD,mpiErr)
+         call MPI_SEND (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
+               & MPI_DOUBLE_PRECISION,0,3,MPI_COMM_WORLD,mpiErr)
       endif
 
 ! This needs to be modified to work in a parallel environment. Perhaps send
 !   progress reports to process 0 and then let only process 0 write.
 !      ! Record the progress so far.
-!      if (mod(i,10) .eq. 0) then
-!         write (20,ADVANCE="NO",FMT="(a1)") "|"
-!      else
-!         write (20,ADVANCE="NO",FMT="(a1)") "."
-!      endif
-!      if (mod(i,50) .eq. 0) then
-!         write (20,*) " ",i
-!      endif
-!      call flush (20)
+      if (mod(i,10) .eq. 0) then
+         write (20,ADVANCE="NO",FMT="(a1)") "|"
+      else
+         write (20,ADVANCE="NO",FMT="(a1)") "."
+      endif
+      if (mod(i,50) .eq. 0) then
+         write (20,*) " ",i
+      endif
+      call flush (20)
    enddo
 
    ! Save to disk the overlap that was accumulated through each loop
+   ! Accumulate the exchCorrOverlap results into the global array.
+   if (mpiRank == 0) then
+     call MPI_REDUCE(MPI_IN_PLACE,exchCorrOverlap,potDim*potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   else 
+     call MPI_REDUCE(exchCorrOverlap,exchCorrOverlap,potDim*potDim,&
+           & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   endif
 
    ! Synchronize all processes so that we can be sure it is okay for process
    !   number 0 to write the results to disk via HDF5.

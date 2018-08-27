@@ -8,7 +8,7 @@ module O_ParallelSetup
   type AtomPair
     integer :: I
     integer :: J
-    type(atomPair), pointer :: next
+    type(atomPair), pointer :: next => null()
   end type AtomPair
 
 contains
@@ -258,8 +258,9 @@ subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs, atomTree)
   integer, dimension(2) :: vvlo, vvhi
   integer, dimension(2) :: cclo, cchi
   integer, dimension(2) :: cvlo, cvhi
-  type(tree_vals), pointer :: initVal
+  type(tree_vals), pointer :: initVal => null()
 
+  integer :: mpierr
 
   ! Need to figure out a better way to initialize the atomTree but for now
   ! we're just gonna put a zero in it, representing cantor pairing of 0,0
@@ -270,8 +271,17 @@ subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs, atomTree)
 
   ! We need to call getArrAtomPairs 3 times one for each array
   call getArrAtomPairs(vvinfo, blcsinfo, atomPairs, atomTree, 0)
+  print *, blcsinfo%mpirank, "vv"
+  call flush(6)
+  call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
   call getArrAtomPairs(ccinfo, blcsinfo, atomPairs, atomTree, 1)
+  print *, blcsinfo%mpirank, "cc"
+  call flush(6)
+  call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
   call getArrAtomPairs(cvinfo, blcsinfo, atomPairs, atomTree, 2)
+  print *, blcsinfo%mpirank, "cv"
+  call flush(6)
+  call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
 
   ! We no longer do this because we need the atomTree for saveCurrentPair
   !  ! By this time we're finished with our atomTree, so we can destroy it.
@@ -307,7 +317,7 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
                       ! which array it is working with. Options are:
                       ! = 0  valeVale array
                       !   1  coreCore array
-                      !   3  coreVale array
+                      !   2  coreVale array
   
 
   ! Define local variables
@@ -346,6 +356,7 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
   ! endif
 
   ! Now we loop over these blocks and record the results in atomPairs
+  print *, "blocks", blcsinfo%mpirank, arrinfo%i, arrinfo%j, arrinfo%nrblocks, arrinfo%ncblocks
   do i=1, arrinfo%nrblocks
     do j=1, arrinfo%ncblocks
       ! Need to set extra if we have an irregularly sized block that needs to
@@ -368,6 +379,8 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
 
       ! For localToGlobalMap we need the the starting indices of the block (a,b)
       ! This is just the array index minus 1, times the block size, plus 1
+      !a = (i-1)*arrinfo%mb+1
+      !b = (j-1)*arrinfo%nb+1
       a = (i-1)*arrinfo%mb+1
       b = (j-1)*arrinfo%nb+1
 
@@ -379,7 +392,9 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
       call getAtoms(glo(2), alo(2), secondDim)
       call getAtoms(ghi(1), ahi(1), firstDim)
       call getAtoms(ghi(2), ahi(2), secondDim)
-     
+      print *, "atoms", glo,ghi,alo, ahi
+      call flush(6)
+
       ! Now we need to enumerate the atomPairs and add them to our tree and list
       call addAtomPairRange(alo, ahi, atomPairs, atomTree, i, j, whichArr)
     enddo
@@ -403,7 +418,7 @@ subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock, &
   integer, intent(in) :: nrblock, ncblock
   integer, intent(in) :: whichArr ! = 0  valeVale array
                                   !   1  coreCore array
-                                  !   3  coreVale array
+                                  !   2  coreVale array
 
   ! Define local variables
   integer :: i,j  ! loop vars
@@ -412,10 +427,10 @@ subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock, &
   do i=alo(1),ahi(1)
     do j=alo(2),ahi(2)
       ! We only need to fill the upper triangle of the vale vale matrix
-      ! so we only don't need atom pairs where i>=j
-      if (i>=j) then
+      ! so we only don't need atom pairs where i>j
+      !if (i<=j) then
         call addAtomPair(i,j, atomPairs, atomTree, nrblock, ncblock, whichArr)
-      endif
+      !endif
     enddo
   enddo
 end subroutine addAtomPairRange
@@ -424,6 +439,7 @@ end subroutine addAtomPairRange
 subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock, whichArr)
   use O_bstAtomPair
   use O_Parallel, only: modifiedCantor
+  use MPI
 
   implicit none
 
@@ -434,39 +450,62 @@ subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock, whichArr)
   integer, intent(in) :: nrblock, ncblock
   integer, intent(in) :: whichArr ! = 0  valeVale array
                                   !   1  coreCore array
-                                  !   3  coreVale array
+                                  !   2  coreVale array
 
   ! Define local variables
   logical :: exists
   integer :: cantorVal
-  type(AtomPair), pointer :: newPair
-  type(AtomPair), pointer :: lastPair
-  type(tree_vals), pointer :: targetPair
-  type(tree_vals), pointer :: newval
-  type(tree_vals), pointer :: tempVal
+  type(AtomPair), pointer :: newPair => null()
+  type(AtomPair), pointer :: lastPair => null()
+  type(tree_vals), pointer :: targetPair => null()
+  type(tree_vals), pointer :: tempVal => null()
+
+  integer :: mpirank, mpierr
 
   call modifiedCantor(i,j,cantorVal)
   allocate(tempVal)
   tempVal%val = cantorVal
 
+  call MPI_COMM_RANK(MPI_COMM_WORLD,mpirank,mpierr)
+
   !call tree_search(atomTree, cantorVal, exists, targetPair)
   call tree_search(atomTree, tempVal, exists, targetPair)
+
   ! If the value is already in the tree, add the lock block information to the
   ! tree, then return.
   if (exists) then
-    if (whichArr==0) then
-      call tree_addVVBlock(targetpair, nrblock, ncblock)
-    else if (whichArr==1) then
-      call tree_addCVBlock(targetpair, nrblock, ncblock)
-    else if (whichArr==2) then
-      call tree_addCCBlock(targetpair, nrblock, ncblock)
-    endif
-    return
+    ! Deallocate tempVal because we no longer need it
+    deallocate(tempVal)
+    tempVal => targetPair
+    ! Add block to 
+    !if (whichArr==0) then
+    !  print *, "add existing"
+    !  call flush(6)
+    !  call tree_addVVBlock(targetpair, nrblock, ncblock)
+    !else if (whichArr==1) then
+    !  call tree_addCVBlock(targetpair, nrblock, ncblock)
+    !else if (whichArr==2) then
+    !  call tree_addCCBlock(targetpair, nrblock, ncblock)
+    !endif
+  else
+    ! If the value is not in the tree, then we first need to add it to the tree.
+    ! First we need to create a new treevals type.
+    call tree_insert(atomTree, tempVal)
+
+    ! Then we initialize lBlockCoords Linked lists for our new val.
+    call initBlockCoords(tempVal%vvblocks)
+    call initBlockCoords(tempVal%cvblocks)
+    call initBlockCoords(tempVal%ccblocks)
   endif
 
-  ! If the value is not in the tree, then we first need to add it to the tree.
-  ! First we need to create a new treevals type.
-  call tree_insert(atomTree, tempVal)
+
+  if (whichArr==0) then
+    call tree_addVVBlock(tempVal, nrblock, ncblock)
+  else if (whichArr==1) then
+    call tree_addCVBlock(tempVal, nrblock, ncblock)
+  else if (whichArr==2) then
+    call tree_addCCBlock(tempVal, nrblock, ncblock)
+  endif
 
   ! Now we need to check and see if this is our first atomPair in the linked
   ! list.
@@ -477,7 +516,7 @@ subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock, whichArr)
     ! If we are not the first pair in the list, we need to initialize a new one
     call initAtomPair(newPair)
     newPair%I = i
-    newPair%J = i
+    newPair%J = j
 
     ! Now we need to go to the end of the linked list
     lastPair => atomPairs
@@ -507,24 +546,28 @@ subroutine getAtoms(gIndx, atomIndx, whichCumul)
   integer :: i
 
   if (whichCumul == 0) then
-    if ( gIndx <= atomSites(1)%cumulValeStates ) then
-      atomIndx = 1
+!    if ( gIndx <= atomSites(1)%cumulValeStates ) then
+!      atomIndx = 1
+    if ( gIndx > atomSites(numAtomSites)%cumulValeStates ) then
+      atomIndx = numAtomSites
     else
       do i=1, numAtomSites-1
         if (gIndx >= atomSites(i)%cumulValeStates .and. &
-              & gIndx < atomSites(i+1)%cumulValeStates) then
+              & gIndx <= atomSites(i+1)%cumulValeStates) then
           atomIndx = i 
         endif
       enddo
     endif
 
   else ! whichCumul = 1
-    if ( gIndx <= atomSites(1)%cumulCoreStates ) then
-      atomIndx = 1
+    !if ( gIndx <= atomSites(1)%cumulCoreStates ) then
+    !  atomIndx = 1
+    if ( gIndx > atomSites(numAtomSites)%cumulCoreStates ) then
+      atomIndx = numAtomSites
     else
       do i=1, numAtomSites-1
         if (gIndx >= atomSites(i)%cumulCoreStates .and. &
-              & gIndx < atomSites(i+1)%cumulCoreStates) then
+              & gIndx <= atomSites(i+1)%cumulCoreStates) then
           atomIndx = i 
         endif
       enddo

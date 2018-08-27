@@ -397,10 +397,12 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
         ! and hiOverlap, we need to map these to the local array indices
         call globalToLocalMap(loOverlap, hiOverlap, locallo, &
           & localhi, arrInfo, blcsInfo, extra)
-        
+       
+        print *, "intg",locallo,localhi,loOverlap, hiOverlap
+        call flush(6)
         ! With all the information calculated we should now be able to
         ! store the elements of current pair into our local array
-        arrInfo%local(locallo(1):localhi(1), locallo(2):localhi(2), :) = &
+        arrInfo%local(locallo(1):localhi(1), locallo(2)+1:localhi(2)+1, :) = &
           & currentPair(loOverlap(1):hiOverlap(1), &
           & loOverlap(2):hiOverlap(2), :)
      endif

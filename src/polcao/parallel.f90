@@ -210,6 +210,9 @@ subroutine setupBlacs(blcsinfo)
 
   ! Define local varaibles
   integer :: mpierr
+  integer :: val
+
+  external :: BLACS_GET, BLACS_GRIDINIT, BLACS_GRIDINFO
 
   call MPI_Comm_rank(MPI_COMM_WORLD, blcsinfo%mpirank, mpierr)
   call MPI_Comm_size(MPI_COMM_WORLD, blcsinfo%mpisize, mpierr)
@@ -217,8 +220,9 @@ subroutine setupBlacs(blcsinfo)
   ! First we need to calculate the processor grid
   call calcProcGrid(blcsinfo)
 
-  call BLACS_GET(-1,0, blcsinfo%context)
-  
+  !call BLACS_GET(blcsinfo%context, 0, val)
+  call BLACS_GET(-1,0,blcsinfo%context)
+ 
   call BLACS_GRIDINIT(blcsinfo%context, 'r', blcsinfo%prows, blcsinfo%pcols)
   
   call BLACS_GRIDINFO(blcsinfo%context, blcsinfo%prows, blcsinfo%pcols, &
@@ -235,8 +239,13 @@ subroutine calcProcGrid(blcsinfo)
   ! Define passed parameters
   type(BlacsInfo), intent(inout) :: blcsinfo
 
-  blcsinfo%prows = int(sqrt(dble(blcsinfo%mpisize)))
-  blcsinfo%pcols = blcsinfo%mpisize / blcsinfo%prows
+  if (blcsinfo%mpisize > 1) then
+    blcsinfo%prows = int(sqrt(dble(blcsinfo%mpisize)))
+    blcsinfo%pcols = blcsinfo%mpisize / blcsinfo%prows
+  else
+    blcsinfo%prows = 1
+    blcsinfo%pcols = 1
+  endif
 end subroutine calcProcGrid
 
 subroutine setupArrayDesc(arrinfo, blcsinfo, numGlobalRows, numGlobalCols, &
@@ -282,8 +291,8 @@ subroutine getBlockDims(arrinfo, blcsinfo)
   ! routine we know that procGridRows will be <= procGridCols.
   ! Because of this we'll do the integer divide on procGridCols, ensuring
   ! that our blocks are square.
-  arrinfo%mb =  int(arrinfo%I / blcsinfo%mpisize)
-  arrinfo%nb =  int(arrinfo%J / blcsinfo%mpisize)
+  arrinfo%mb =  int(arrinfo%I / blcsinfo%prows)
+  arrinfo%nb =  int(arrinfo%J / blcsinfo%pcols)
 
   ! For the case that global matrix doesn't divide perfectly by our choice in
   ! block size, there will be a couple extra rows and columns that need to be 
@@ -296,20 +305,20 @@ subroutine getBlockDims(arrinfo, blcsinfo)
   ! of the process grid, because we have to maintain the block cyclic
   ! distribution. This is why the calculation is done in this way. For more info
   ! see http://netlib.org/scalapack/slug/node78.html
-  extraRow = mod( arrinfo%I/arrinfo%nb, blcsinfo%mpisize)
-  extraCol = mod( arrinfo%J/arrinfo%mb, blcsinfo%mpisize)
+  extraRow = mod( arrinfo%I/arrinfo%nb, blcsinfo%prows)
+  extraCol = mod( arrinfo%J/arrinfo%mb, blcsinfo%pcols)
 
   ! Calculate the number of blocks along rows and columns
   arrinfo%nrblocks = int(arrinfo%I / arrinfo%mb / blcsinfo%prows)
   arrinfo%ncblocks = int(arrinfo%J / arrinfo%nb / blcsinfo%pcols)
 
-  if ( extraRow == blcsinfo%myprow ) then
+  if ( (extraRow>0) .and. (extraRow == blcsinfo%myprow) ) then
     arrinfo%extraRows = mod(arrinfo%I, arrinfo%mb)
     arrinfo%nrblocks = arrinfo%nrblocks+1
   else
     arrinfo%extraRows = 0
   endif
-  if ( extraCol == blcsinfo%mypcol ) then
+  if ( (extraCol>0) .and. (extraCol == blcsinfo%mypcol) ) then
     arrinfo%extraCols = mod(arrinfo%J, arrinfo%nb)
     arrinfo%ncblocks = arrinfo%ncblocks+1
   else
@@ -471,23 +480,29 @@ subroutine globalToLocalMap(glo, ghi, llo, lhi, arrinfo, blcsinfo, extra)
                                !   1 nrows is less than mb
                                !   2 ncols is less than nb
                                !   3 both nrows and ncols is less than nb and mb
+  print *, "glob to loc", glo, ghi, extra, blcsInfo%prows, blcsInfo%pcols
+  call flush(6)
 
-  llo(1) = ((glo(1)-1)/blcsInfo%myprow) + mod(glo(1),arrInfo%mb) + 1
-  llo(2) = ((glo(2)-1)/blcsInfo%mypcol) + mod(glo(2),arrInfo%nb) + 1
+  ! ((I-1)/(Pr*MB))*MB + mod(I,MB) + 1
+  llo(1) = ((glo(1))/(blcsInfo%prows)) + mod(glo(1),arrInfo%mb) + 1
+  llo(2) = ((glo(2))/(blcsInfo%pcols)) + mod(glo(2),arrInfo%nb) + 1
 
   if (extra == 0) then
-    lhi(1) = ((ghi(1)-1)/blcsInfo%myprow) + mod(ghi(1),arrInfo%mb) + 1
-    lhi(2) = ((ghi(2)-1)/blcsInfo%mypcol) + mod(ghi(2),arrInfo%nb) + 1
+    lhi(1) = ((ghi(1))/(blcsInfo%prows))+mod(ghi(1),arrInfo%mb)+1
+    lhi(2) = ((ghi(2))/(blcsInfo%pcols))+mod(ghi(2),arrInfo%nb)+1
   elseif (extra == 1) then
     lhi(1) = llo(1) + arrinfo%extraRows
-    lhi(2) = ((ghi(2)-1)/blcsInfo%mypcol) + mod(ghi(2),arrInfo%nb) + 1
+    lhi(2) = ((ghi(2))/(blcsInfo%pcols))+mod(ghi(2),arrInfo%nb)+1
   elseif (extra == 2) then
-    lhi(1) = ((ghi(1)-1)/blcsInfo%myprow) + mod(ghi(1),arrInfo%mb) + 1
+    lhi(1) = ((ghi(1))/(blcsInfo%prows))+mod(ghi(1),arrInfo%mb)+1
     lhi(2) = llo(2) + arrinfo%extraCols
   elseif (extra == 3) then
     lhi(1) = llo(1) + arrinfo%extraRows
     lhi(2) = llo(2) + arrinfo%extraCols
   endif
+
+  print *, "gtol lo", llo,lhi, arrinfo%mb, arrinfo%nb
+  call flush(6)
 
 end subroutine globalToLocalMap
 

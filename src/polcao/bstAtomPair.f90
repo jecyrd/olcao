@@ -19,27 +19,30 @@ module O_bstAtomPair
   ! functions on our new types. This'll keep changes small from the reference 
   ! implementation.
   type bst_atom_pair_node
-    type(tree_vals), pointer :: lval
-    type(tree_vals), pointer :: mval
-    type(tree_vals), pointer :: hval
-    type(bst_atom_pair_node), pointer :: lchild, mlchild, mrchild, rchild
-    type(bst_atom_pair_node), pointer :: parent
+    type(tree_vals), pointer :: lval => null()
+    type(tree_vals), pointer :: mval => null()
+    type(tree_vals), pointer :: hval => null()
+    type(bst_atom_pair_node), pointer :: lchild => null()
+    type(bst_atom_pair_node), pointer :: mlchild => null()
+    type(bst_atom_pair_node), pointer :: mrchild => null()
+    type(bst_atom_pair_node), pointer :: rchild => null()
+    type(bst_atom_pair_node), pointer :: parent => null()
   end type bst_atom_pair_node
 
   ! Data structure to replace the integers in the reference implementation of
   ! the bst
   type tree_vals
     integer :: val
-    type(lBlockCoords), pointer :: vvblocks
-    type(lBlockCoords), pointer :: cvblocks
-    type(lBlockCoords), pointer :: ccblocks
+    type(lBlockCoords), pointer :: vvblocks => null()
+    type(lBlockCoords), pointer :: cvblocks => null()
+    type(lBlockCoords), pointer :: ccblocks => null()
   end type tree_vals
 
   ! New linked list type for readability, to be used with tree above.
   type lBlockCoords
     integer :: blockrow
     integer :: blockcol
-    type(lBlockCoords), pointer :: next
+    type(lBlockCoords), pointer :: next => null()
   end type lBlockCoords
 
   ! Define overload for greater than when using tree_vals type
@@ -99,16 +102,20 @@ subroutine tree_destroyVals(val)
   ! Define passed parameters
   type(tree_vals), pointer :: val
 
-  if ( associated(val%vvblocks) ) then
-    call tree_destroyBlockCoordsList(val%vvblocks)
-  endif
+  if ( associated(val) ) then
+    if ( associated(val%vvblocks) ) then
+      call tree_destroyBlockCoordsList(val%vvblocks)
+    endif
 
-  if ( associated(val%cvblocks) ) then
-    call tree_destroyBlockCoordsList(val%cvblocks)
-  endif
-  
-  if ( associated(val%ccblocks) ) then
-    call tree_destroyBlockCoordsList(val%ccblocks)
+    if ( associated(val%cvblocks) ) then
+      call tree_destroyBlockCoordsList(val%cvblocks)
+    endif
+    
+    if ( associated(val%ccblocks) ) then
+      call tree_destroyBlockCoordsList(val%ccblocks)
+    endif
+    deallocate(val)
+    nullify(val)
   endif
 end subroutine tree_destroyVals
 
@@ -121,6 +128,7 @@ subroutine tree_init(tree, val)
   type(tree_vals), pointer :: val
 
   allocate(tree)
+
   tree%lval=>val
   tree%hval=>null()
   tree%mval=>null()
@@ -143,12 +151,16 @@ recursive subroutine tree_destroy(tree)
   type(bst_atom_pair_node), pointer :: tree
 
   ! Define local variables
-  type(bst_atom_pair_node), pointer :: rchild, mlchild, lchild
+  type(bst_atom_pair_node), pointer :: rchild => null()
+  type(bst_atom_pair_node), pointer :: mlchild => null()
+  type(bst_atom_pair_node), pointer :: lchild => null()
 
   rchild => tree%rchild
   mlchild => tree%mlchild
   lchild => tree%lchild
 
+  print *, '______________________________'
+  call flush(6)
   if ( associated(lchild) ) then
     call tree_destroy(lchild)
   endif
@@ -165,6 +177,7 @@ recursive subroutine tree_destroy(tree)
   call tree_destroyVals(tree%mval)
   call tree_destroyVals(tree%hval)
   deallocate(tree)
+  nullify(tree)
 end subroutine tree_destroy
 
 subroutine tree_destroyNode(node)
@@ -192,14 +205,14 @@ recursive subroutine tree_search(root, val, exists, node)
  
   if (associated(root%lval)) then
     if (root%lval == val) then
-      node = root%lval
+      node => root%lval
       exists = .true.
       return
     endif
   endif
   if (associated(root%hval)) then 
     if (root%hval == val) then
-      node = root%hval
+      node => root%hval
       exists = .true.
       return
     endif
@@ -332,16 +345,33 @@ subroutine tree_addVVBlock(nval, nrblock, ncblock)
   integer, intent(in) :: nrblock, ncblock
 
   ! Define local varaiables
-  type(lBlockCoords), pointer :: last
-  type(lBlockCoords), pointer :: new
+  type(lBlockCoords), pointer :: last => null()
+  type(lBlockCoords), pointer :: new => null()
 
+  ! If this is true then it is the first item in the block coords list, so we
+  ! can just set the values and return
+  if ((nval%vvblocks%blockrow == -1) .and. (nval%vvblocks%blockcol == -1)) then
+    nval%vvblocks%blockrow = nrblock
+    nval%vvblocks%blockcol = ncblock
+    print *, 'return',nrblock, ncblock
+    return
+  endif
+
+  ! If the above if block doesn't run then we need to make a new item and
+  ! point to it from the last item on the linked list
   allocate(new)
   new%blockrow = nrblock
   new%blockcol = ncblock
 
+  print *, "vvblock", associated(nval%vvblocks),nval%vvblocks%blockrow
+  print *, "next", associated(nval%vvblocks%next),nval%vvblocks%blockrow
+  call flush(6)
+
   ! Go to the last item in the linked list
   last => nval%vvblocks
   do while ( associated(last%next) )
+    print *, "next", associated(last%next),last%blockrow,last%blockcol
+    call flush(6)
     last => last%next
   enddo
 
@@ -358,8 +388,14 @@ subroutine tree_addCVBlock(nval, nrblock, ncblock)
   integer, intent(in) :: nrblock, ncblock
 
   ! Define local varaiables
-  type(lBlockCoords), pointer :: last
-  type(lBlockCoords), pointer :: new
+  type(lBlockCoords), pointer :: last => null()
+  type(lBlockCoords), pointer :: new => null()
+
+  if ((nval%cvblocks%blockrow == -1) .and. (nval%cvblocks%blockcol == -1)) then
+    nval%cvblocks%blockrow = nrblock
+    nval%cvblocks%blockcol = ncblock
+    return
+  endif
 
   allocate(new)
   new%blockrow = nrblock
@@ -384,8 +420,14 @@ subroutine tree_addCCBlock(nval, nrblock, ncblock)
   integer, intent(in) :: nrblock, ncblock
 
   ! Define local varaiables
-  type(lBlockCoords), pointer :: last
-  type(lBlockCoords), pointer :: new
+  type(lBlockCoords), pointer :: last => null()
+  type(lBlockCoords), pointer :: new => null()
+
+  if ((nval%ccblocks%blockrow == -1) .and. (nval%ccblocks%blockcol == -1)) then
+    nval%ccblocks%blockrow = nrblock
+    nval%ccblocks%blockcol = ncblock
+    return
+  endif
 
   allocate(new)
   new%blockrow = nrblock
@@ -471,8 +513,8 @@ subroutine tree_split(node)
   type(bst_atom_pair_node), pointer :: node
 
   ! Define local variables
-  type(bst_atom_pair_node), pointer :: parent
-  type(bst_atom_pair_node), pointer :: newNode
+  type(bst_atom_pair_node), pointer :: parent => null()
+  type(bst_atom_pair_node), pointer :: newNode => null()
   integer :: ntype
   integer :: lmr
   logical :: isLeaf
@@ -554,7 +596,7 @@ subroutine tree_moveMvalUp(node)
 
   ! Define local variables
   integer :: ntype
-  type(tree_vals), pointer :: tempVal
+  type(tree_vals), pointer :: tempVal => null()
 
   ! Now we have to combine the mlchild and the mrchild. Also deallocate the
   ! mrnode, and dereference the mrchild pointer
@@ -585,8 +627,8 @@ subroutine tree_splitRoot(node)
   type(bst_atom_pair_node), pointer :: node
 
   ! Define local variables
-  type(bst_atom_pair_node), pointer :: parent
-  type(bst_atom_pair_node), pointer :: newNode
+  type(bst_atom_pair_node), pointer :: parent => null()
+  type(bst_atom_pair_node), pointer :: newNode => null()
   integer :: lmr
   logical :: isleaf
 
@@ -630,8 +672,8 @@ subroutine tree_threeToFour(node, val)
   type(tree_vals), pointer :: val
 
   ! Define local variables
-  type(bst_atom_pair_node), pointer :: tempNode
-  type(tree_vals), pointer :: tempVal
+  type(bst_atom_pair_node), pointer :: tempNode => null()
+  type(tree_vals), pointer :: tempVal => null()
   logical :: isLeaf
 
   call tree_isLeaf(node,isLeaf)
@@ -687,7 +729,7 @@ subroutine tree_twoToThree(node, val)
 
   ! Define local variables
   logical :: isLeaf
-  type(tree_vals), pointer :: tempVal
+  type(tree_vals), pointer :: tempVal => null()
 
   call tree_isLeaf(node, isLeaf)
 
@@ -735,7 +777,7 @@ subroutine tree_addNode(parent, val, lmr)
   integer, intent(in) :: lmr
 
   ! Define local variables
-  type(bst_atom_pair_node), pointer :: newChild
+  type(bst_atom_pair_node), pointer :: newChild => null()
 
   call tree_init(newChild, val)
 
@@ -953,7 +995,7 @@ function val_bst_lt(tval1, tval2)
 end function val_bst_lt
 
 
-! Functions for overloading tree_vals operations with less than
+! Functions for overloading tree_vals operations with equals
 function bst_eq(tval1, tval2)
   implicit none
 

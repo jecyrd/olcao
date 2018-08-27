@@ -117,7 +117,7 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
    ! Define variables for MPI, and distributed operations
    type(ArrayInfo) :: vvArrayInfo
    type(ArrayInfo) :: ccArrayInfo
-   type(AtomPair), pointer :: currAtomPair
+   type(AtomPair), pointer :: currAtomPair => null()
 
    ! Define variables for gauss integrals
    integer :: l1l2Switch
@@ -537,7 +537,7 @@ subroutine gaussOverlapKE(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
    type(ArrayInfo) :: vvArrayInfo
    type(ArrayInfo) :: cvArrayInfo
    type(ArrayInfo) :: ccArrayInfo
-   type(AtomPair), pointer :: currAtomPair
+   type(AtomPair), pointer :: currAtomPair => null()
 
    ! Define variables for gauss integrals
    integer :: l1l2Switch
@@ -960,7 +960,7 @@ subroutine gaussOverlapNP(BlcsInfo, cvOLArrayINfo, atomList, atomTree)
    type(ArrayInfo) :: vvArrayInfo
    type(ArrayInfo) :: cvArrayInfo
    type(ArrayInfo) :: ccArrayInfo
-   type(AtomPair), pointer :: currAtomPair
+   type(AtomPair), pointer :: currAtomPair => null()
 
 
    ! Record the beginning of this phase of the setup calculation.
@@ -1381,7 +1381,7 @@ subroutine gaussOverlapEP(BlcsInfo, cvOLArrayInfo, atomList, atomTree, &
    type(ArrayInfo) :: vvArrayInfo
    type(ArrayInfo) :: cvArrayInfo
    type(ArrayInfo) :: ccArrayInfo
-   type(AtomPair), pointer :: currAtomPair
+   type(AtomPair), pointer :: currAtomPair => null()
 
    ! Define variables for gauss integrals
    integer :: l1l2Switch
@@ -2360,7 +2360,7 @@ subroutine ortho (opCode, vvInfo, ccInfo, cvInfo, cvOLInfo, blcsInfo, potDIm, &
    ! Setup the local array info for the valeCore matrix formed by the
    ! conjugate transpose of cvOL
    call setupArrayDesc(vcInfo, blcsinfo, valeDim, coreDim, numKPoints)
-   call pctrans(cvInfo, vcInfo)
+   call pctrans(cvOLInfo, vcInfo)
 
    ! Setup the local array info for the temporary valeCore matrix used in these
    ! subroutines

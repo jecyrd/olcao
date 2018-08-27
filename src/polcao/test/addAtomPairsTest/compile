@@ -1,0 +1,3 @@
+#!/bin/bash
+
+h5fc -g ../../parallel.f90 ./blacsSetupTest.f90 -o blacsSetupTest -lscalapack -llapack -lblas

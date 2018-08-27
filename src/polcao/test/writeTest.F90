@@ -32,26 +32,44 @@ program writeTest
   call MPI_Init(mpierr)
   call MPI_COMM_RANK(MPI_COMM_WORLD,mpirank,mpierr)
   call MPI_COMM_SIZE(MPI_COMM_WORLD,mpisize,mpierr)
+  print *, "1, Rank: ",mpiRank
+  call flush(20)
+  call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
   if (mpirank == 0) then
     call setupHDF5(mpisize, file_id, dset_id, dspace_id)
   endif
-
+  print *, "2, Rank: ",mpiRank
+  call flush(20)
   call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
   call setupBlacs(blcsinfo)
+  print *, "3, Rank: ",mpiRank
+  call flush(20)
+  call MPI_Barrier(MPI_COMM_WORLD, mpierr)
   
   call setupArrayDesc(arrinfo, blcsinfo, 13, 13, 1)
+  print *, "4, Rank: ",mpiRank
+  call flush(20)
+  call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+  
 
   to = 0
   tag = 0
   dcount = size(arrinfo%local,1)*size(arrinfo%local,2)*size(arrinfo%local,3)
   call initData(mpirank, arrinfo)
   call initData2(mpirank, arrinfo)
+  print *, "5, Rank: ",mpiRank
+  call flush(20)
+  call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+  
 
   if (mpirank == 0) then
     call writeValeVale(arrinfo, blcsinfo, file_id, dset_id, dspace_id, 0)
   endif
+  call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+  print *, "6, Rank: ",mpiRank
+  call flush(20)
   call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
   do i=1,mpisize-1
@@ -80,13 +98,22 @@ program writeTest
     endif
     call MPI_Barrier(MPI_COMM_WORLD, mpierr)
   end do
+  print *, "7, Rank: ",mpiRank
+  call flush(20)
+  call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
   call deallocLocalArray(arrinfo)
+  print *, "8, Rank: ",mpiRank
+  call flush(20)
+  call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
   call MPI_Barrier(MPI_COMM_WORLD, mpierr)
   if (mpirank == 0) then
     call closeHDF5(file_id, dset_id, dspace_id)
   endif
+  print *, "9, Rank: ",mpiRank
+  call flush(20)
+  call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
   call MPI_Barrier(MPI_COMM_WORLD, mpierr)
   call MPI_FINALIZE(mpierr)

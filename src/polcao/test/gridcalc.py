@@ -14,7 +14,7 @@ def gridCalc(numprocs):
   return prow,pcol
 
 
-for x in xrange(2,1025):
+for x in xrange(2,10):
   nprow, npcol = gridCalc(x)
   print "Numprocs: ", x, 'Extra:',(x)-nprow*npcol, "nprow: ", nprow, "npcol: ", npcol
 

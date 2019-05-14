@@ -230,8 +230,10 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsInfo, vvInfo, &
    hiStateIndex(1) = valeStateIndex(1)+valeStateNum(1)
    hiStateIndex(2) = valeStateIndex(2)+valeStateNum(2)
    ! Now call atomAtomSaving for the valeVale array
-   call atomAtomSaving(i, j, loStateIndex, hiStateIndex, currentPair, &
-     & currentPairDagger, vvInfo, blcsInfo, atomTree, 0)
+   call atomAtomSaving(i, j, loStateIndex, hiStateIndex, &
+     & currentPair(1:valeStateNum(1),1:valeStateNum(2),:), &
+     & currentPairDagger(1:valeStateNum(2),1:valeStateNum(1),:), & 
+     & vvInfo, blcsInfo, atomTree, 0)
 
    ! If there is no core contribution then we don't have to save any
    !   core parts.
@@ -254,8 +256,15 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsInfo, vvInfo, &
    !call coreValeSaving (kPointCount,valeStateIndex,valeStateNum,&
    !      & coreStateIndex,coreStateNum,currentPair,currentPairDagger,&
    !      & descriptCV,descriptVC,localCV,localVC)
-   call atomAtomSaving(i, j, loStateIndex, hiStateIndex, currentPair, &
-     & currentPairDagger, cvInfo, blcsInfo, atomTree, 1)
+   call atomAtomSaving(i, j, loStateIndex, hiStateIndex, &
+     & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1),&
+     & 1:valeStateNum(2),:), &
+     & currentPairDagger(1:valeStateNum(2),valeStateNum(1)+1:valeStateNum(1)+ &
+     & coreStateNum(1),:), &
+     & cvInfo, blcsInfo, atomTree, 1)
+   ! need to change to take only the valeVale section out of currentPair
+   ! currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1),
+   !             1:valeStateNum(2))
 
    ! Now we do the Core Core part just the same as we did for the Vale
    !   Vale part.  The only difference is the shift of valeStateNum(:)
@@ -269,12 +278,16 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsInfo, vvInfo, &
    hiStateIndex(2) = coreStateIndex(2)+coreStateNum(2)
    !call coreCoreSaving (i,j,kPointCount,valeStateNum,coreStateIndex,&
    !      & coreStateNum,currentPair,currentPairDagger,descriptCC,localCC)
-   call atomAtomSaving(i, j, loStateIndex, hiStateIndex, currentPair, &
-     & currentPairDagger, ccInfo, blcsInfo, atomTree, 2)
+   call atomAtomSaving(i, j, loStateIndex, hiStateIndex, &
+     & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1), &
+     & valeStateNum(2)+1:valeStateNum(2)+coreStateNum(2),:), &
+     & currentPairDagger(valeStateNum(2)+1:valeStateNum(2)+coreStateNum(2), &
+     & valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1),:), &
+     & ccInfo, blcsInfo, atomTree, 2)
 
    ! Deallocate the dagger of the current pair since it is no longer needed.
    deallocate (currentPairDagger)
-
+   
 end subroutine saveCurrentPair
 
 
@@ -309,7 +322,7 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
    integer, dimension(2), intent(in) :: loStateIndex, hiStateIndex
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
          & numKPoints), intent(in) :: currentPair
-   complex (kind=double), allocatable, dimension (:,:,:) :: currentPairDagger
+   complex (kind=double), dimension (:,:,:) :: currentPairDagger
    type(ArrayInfo), intent(inout) :: arrInfo
    type(BlacsInfo), intent(in) :: blcsInfo
    type(bst_atom_pair_node), pointer :: atomTree
@@ -318,6 +331,7 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
    ! Define local variables
    integer :: row, col ! Loop variables
    integer :: a, b     ! Block local indices
+   integer, dimension(2) :: cplo, cphi ! indices of relevant data in currentPair
    integer, dimension(2) :: lblock, hblock ! Block global indices
    !integer, dimension(2) :: hiStateIndex ! Current pair global indices
    !                                      ! corresponding to the bottom right
@@ -332,9 +346,9 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
    integer :: extra ! Variable to denote irregular size in one dimension
                     ! see localToGlobalMap in O_Parallel for description
 
-   type(tree_vals), pointer :: curPair
-   type(tree_vals), pointer :: tempval
-   type(lBlockCoords), pointer :: curblock
+   type(tree_vals), pointer :: curPair => null()
+   type(tree_vals), pointer :: tempval => null()
+   type(lBlockCoords), pointer :: curblock => null()
    logical :: exists
    integer :: cantor
 
@@ -343,6 +357,12 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
    tempval%val = cantor
    call tree_search(atomTree, tempval, exists, curPair)
    deallocate(tempval)
+
+   print *, blcsinfo%mpirank, whichArr, "i,j,cantor", i,j,cantor, exists
+   call flush(6)
+   print *, blcsinfo%mpirank, "size", size(arrinfo%local,1),size(arrinfo%local,2)
+   print *, 'currPairSize:', size(currentPair,1), size(currentPair,2)
+   call flush(6)
 
    if (whichArr == 0) then
      curblock => curPair%vvblocks
@@ -354,7 +374,7 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
 
    !do row=1,arrinfo%nrblocks
    !   do col=1,arrinfo%ncblocks
-   do 
+   do while( associated(curblock) )
      row = curblock%blockrow
      col = curblock%blockcol
      ! Need to set extra if we have an irregularly size block that needs to
@@ -375,13 +395,22 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
        endif
      endif
 
+     print *, "mb,prow,myprow", arrinfo%mb, blcsinfo%prows, blcsinfo%myprow
+     print *, "nb,pcol,mypcol", arrinfo%nb, blcsinfo%pcols, blcsinfo%mypcol
+     call flush(6)
+
      ! Now we calculate our block's local starting indices
      a = ((row-1) * arrinfo%mb) + 1
      b = ((col-1) * arrinfo%nb) + 1
+     print *, blcsinfo%mpirank, "row,col",row,col
+     print *, blcsinfo%mpirank, "a,b",a,b, extra
+     call flush(6)
 
      ! Now localToGlobalMap sets calculates blocks global indices and 
      ! stores in lblock and hblock
      call localToGlobalMap(a, b, lblock, hblock, arrInfo, blcsInfo, extra)
+     print *, "blocks", lblock, hblock
+     call flush(6)
 
      ! Now we need to check if this block's global indices, overlap with the
      ! currentPair's indices
@@ -392,27 +421,38 @@ subroutine atomAtomSaving (i,j,loStateIndex, hiStateIndex, currentPair, &
         ! overlap.
         call getOverlapRect(lblock, hblock, loStateIndex, &
           & hiStateIndex, loOverlap, hiOverlap)
+        print *, "overlap", loOverlap, hiOverlap
+        call flush(6)
 
         ! Now that we have the global indices of the overlap in loOverlap
         ! and hiOverlap, we need to map these to the local array indices
         call globalToLocalMap(loOverlap, hiOverlap, locallo, &
           & localhi, arrInfo, blcsInfo, extra)
-       
-        print *, "intg",locallo,localhi,loOverlap, hiOverlap
+        
+        print *, "local indx", locallo, localhi
         call flush(6)
+
+        print *, 'lo',loStateIndex, looverlap
+        print *, 'hi',hiStateIndex, hioverlap
+        print *, 'size', size(currentPair,1), size(currentPair,2) 
         ! With all the information calculated we should now be able to
         ! store the elements of current pair into our local array
+        cphi(1) = size(currentPair,1) - (hiStateIndex(1) - hiOVerlap(1))
+        cphi(2) = size(currentPair,2) - (hiStateIndex(2) - hiOVerlap(2))
+        cplo(1) = size(currentPair,1) - (loStateIndex(1) - loOverlap(1)) 
+        cplo(2) = size(currentPair,2) - (loStateIndex(2) - loOverlap(2)) 
+        print *, "h,l", cplo, cphi
         arrInfo%local(locallo(1):localhi(1), locallo(2)+1:localhi(2)+1, :) = &
-          & currentPair(loOverlap(1):hiOverlap(1), &
-          & loOverlap(2):hiOverlap(2), :)
+          & currentPair(cplo(1):cphi(1), cplo(2):cphi(2), :)
+
      endif
-     ! If there are no more blocks to loop over, exit the loop
-     if (.not. associated(curblock%next)) then
-       exit
-     else
-       curblock => curblock%next
-     endif
+
+     curblock => curblock%next
    enddo
+
+   print *, "end atomAtomSaving call"
+   print *, ""
+   call flush(6)
 end subroutine atomAtomSaving
 
 

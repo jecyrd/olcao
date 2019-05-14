@@ -14,17 +14,18 @@ module O_ParallelSetup
 contains
 
 ! This subroutine initializes a new element in the atomPair linked list
-subroutine initAtomPair(atomNode)
+subroutine initAtomPair(atomNode,i,j)
   implicit none
 
   ! Define passed parameters
   type(AtomPair), pointer :: atomNode
+  integer, intent(in) :: i,j
 
   allocate(atomNode)
 
   atomNode%next => null()
-  atomNode%I = -1
-  atomNode%J = -1
+  atomNode%I = i
+  atomNode%J = j
 end subroutine initAtomPair
 
 recursive subroutine destroyAtomList(root)
@@ -271,16 +272,10 @@ subroutine getAtomPairs(vvinfo, ccinfo, cvinfo, blcsinfo, atomPairs, atomTree)
 
   ! We need to call getArrAtomPairs 3 times one for each array
   call getArrAtomPairs(vvinfo, blcsinfo, atomPairs, atomTree, 0)
-  print *, blcsinfo%mpirank, "vv"
-  call flush(6)
   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
   call getArrAtomPairs(ccinfo, blcsinfo, atomPairs, atomTree, 1)
-  print *, blcsinfo%mpirank, "cc"
-  call flush(6)
   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
   call getArrAtomPairs(cvinfo, blcsinfo, atomPairs, atomTree, 2)
-  print *, blcsinfo%mpirank, "cv"
-  call flush(6)
   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
 
   ! We no longer do this because we need the atomTree for saveCurrentPair
@@ -356,7 +351,6 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
   ! endif
 
   ! Now we loop over these blocks and record the results in atomPairs
-  print *, "blocks", blcsinfo%mpirank, arrinfo%i, arrinfo%j, arrinfo%nrblocks, arrinfo%ncblocks
   do i=1, arrinfo%nrblocks
     do j=1, arrinfo%ncblocks
       ! Need to set extra if we have an irregularly sized block that needs to
@@ -392,8 +386,6 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
       call getAtoms(glo(2), alo(2), secondDim)
       call getAtoms(ghi(1), ahi(1), firstDim)
       call getAtoms(ghi(2), ahi(2), secondDim)
-      print *, "atoms", glo,ghi,alo, ahi
-      call flush(6)
 
       ! Now we need to enumerate the atomPairs and add them to our tree and list
       call addAtomPairRange(alo, ahi, atomPairs, atomTree, i, j, whichArr)
@@ -422,7 +414,6 @@ subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock, &
 
   ! Define local variables
   integer :: i,j  ! loop vars
-
 
   do i=alo(1),ahi(1)
     do j=alo(2),ahi(2)
@@ -493,12 +484,33 @@ subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock, whichArr)
     call tree_insert(atomTree, tempVal)
 
     ! Then we initialize lBlockCoords Linked lists for our new val.
-    call initBlockCoords(tempVal%vvblocks)
-    call initBlockCoords(tempVal%cvblocks)
-    call initBlockCoords(tempVal%ccblocks)
+    !if (whichArr==0) then
+    !  call initBlockCoords(tempVal%vvblocks)
+    !else if (whichArr==1) then
+    !  call initBlockCoords(tempVal%cvblocks)
+    !else if (whichArr==2) then
+    !  call initBlockCoords(tempVal%ccblocks)
+    !endif
+
+    if (.not. associated(atomPairs)) then
+      call initAtomPair(atomPairs,i,j)
+    else
+      ! If we are not the first pair in the list, 
+      ! we need to initialize a new one
+      call initAtomPair(newPair,i,j)
+
+      ! Now we need to go to the end of the linked list
+      lastPair => atomPairs
+      do while ( associated(lastPair%next) )
+        lastPair => lastPair%next
+      enddo
+
+      ! Point the last pair's pointer to the newPair 
+      lastPair%next => newPair
+    endif
   endif
 
-
+  ! Lastly add the block indices to the lists
   if (whichArr==0) then
     call tree_addVVBlock(tempVal, nrblock, ncblock)
   else if (whichArr==1) then
@@ -507,26 +519,6 @@ subroutine addAtomPair(i, j, atomPairs, atomTree, nrblock, ncblock, whichArr)
     call tree_addCCBlock(tempVal, nrblock, ncblock)
   endif
 
-  ! Now we need to check and see if this is our first atomPair in the linked
-  ! list.
-  if ( (atomPairs%I == -1) .and. (atomPairs%J == -1) ) then
-    atomPairs%I = i
-    atomPairs%J = j
-  else 
-    ! If we are not the first pair in the list, we need to initialize a new one
-    call initAtomPair(newPair)
-    newPair%I = i
-    newPair%J = j
-
-    ! Now we need to go to the end of the linked list
-    lastPair => atomPairs
-    do while ( associated(lastPair%next) )
-      lastPair => lastPair%next
-    enddo
-
-    ! Point the last pair's pointer to the newPair 
-    lastPair%next => newPair
-  endif
 
 end subroutine addAtomPair
 

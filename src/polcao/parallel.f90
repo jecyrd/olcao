@@ -115,8 +115,8 @@ subroutine pctrans(aInfo, cInfo)
 
   do i=1,aInfo%numKP
     call pztranc(aInfo%J,aInfo%I,(1.0_double,0.0_double),aInfo%local(:,:,i), &
-          & 0,0,aInfo%desc,(1.0_double,0.0_double), cInfo%local(:,:,i), &
-          & 0,0,cInfo%desc)
+          & aInfo%mb,aInfo%nb,aInfo%desc,(1.0_double,0.0_double), &
+          & cInfo%local(:,:,i),0,0,cInfo%desc)
   enddo
 end subroutine pctrans
 
@@ -134,7 +134,7 @@ subroutine pdtrans(aInfo, cInfo)
 
   do i=1,aInfo%numKP
     call pdtran(aInfo%J,aInfo%I,1.0_double,aInfo%local, &
-          & 0,0,aInfo%desc,1.0_double, cInfo%local, &
+          & aInfo%mb,aInfo%nb,aInfo%desc,1.0_double, cInfo%local, &
           & 0,0,cInfo%desc)
   enddo
 end subroutine pdtrans
@@ -200,13 +200,14 @@ end subroutine cantorInverse
 
 ! This subroutine calculates the process grid dimensions and sets up the 
 ! blacs context for a distributed operation
-subroutine setupBlacs(blcsinfo)
+subroutine setupBlacs(blcsinfo, pgrid)
   use MPI
 
   implicit none
 
   ! Define passed parameters
   type(BlacsInfo), intent(inout) :: blcsinfo
+  integer, dimension(2), intent(in) :: pgrid
 
   ! Define local varaibles
   integer :: mpierr
@@ -218,7 +219,9 @@ subroutine setupBlacs(blcsinfo)
   call MPI_Comm_size(MPI_COMM_WORLD, blcsinfo%mpisize, mpierr)
 
   ! First we need to calculate the processor grid
-  call calcProcGrid(blcsinfo)
+  !call calcProcGrid(blcsinfo)
+  blcsinfo%prows = pgrid(1)
+  blcsinfo%pcols = pgrid(2)
 
   !call BLACS_GET(blcsinfo%context, 0, val)
   call BLACS_GET(-1,0,blcsinfo%context)
@@ -305,8 +308,8 @@ subroutine getBlockDims(arrinfo, blcsinfo)
   ! of the process grid, because we have to maintain the block cyclic
   ! distribution. This is why the calculation is done in this way. For more info
   ! see http://netlib.org/scalapack/slug/node78.html
-  extraRow = mod( arrinfo%I/arrinfo%nb, blcsinfo%prows)
-  extraCol = mod( arrinfo%J/arrinfo%mb, blcsinfo%pcols)
+  extraRow = mod( arrinfo%I/arrinfo%mb, blcsinfo%prows)
+  extraCol = mod( arrinfo%J/arrinfo%nb, blcsinfo%pcols)
 
   ! Calculate the number of blocks along rows and columns
   arrinfo%nrblocks = int(arrinfo%I / arrinfo%mb / blcsinfo%prows)
@@ -442,27 +445,40 @@ subroutine localToGlobalMap(a, b, glo, ghi, arrinfo, blcsinfo, extra)
                                !   3 both nrows and ncols is less than nb and mb
 
   ! Calculate the upper left corner
-  glo(1) = (((a-0)/arrinfo%mb)*blcsinfo%prows+blcsinfo%myprow)*arrinfo%mb + 0
-  glo(2) = (((b-0)/arrinfo%nb)*blcsinfo%pcols+blcsinfo%mypcol)*arrinfo%nb + 0
-  !glo(1) = (a-0)*blcsinfo%myprows + 1
-  !glo(2) = (b-0)*blcsinfo%mypcols + 1
+  !glo(1) = (((a-1)/arrinfo%mb)*blcsinfo%prows+blcsinfo%myprow)*arrinfo%mb + 1
+  !glo(2) = (((b-1)/arrinfo%nb)*blcsinfo%pcols+blcsinfo%mypcol)*arrinfo%nb + 1
+  glo(1) = ltog(a,1,arrinfo%mb,blcsinfo%prows,blcsinfo%myprow)
+  glo(2) = ltog(b,1,arrinfo%nb,blcsinfo%pcols,blcsinfo%mypcol)
+
 
   ! Calculate the bottom right corner
   if (extra == 0) then
-    ghi(1) = glo(1) + arrinfo%mb
-    ghi(2) = glo(2) + arrinfo%nb
+    ghi(1) = glo(1) + arrinfo%mb - 1
+    ghi(2) = glo(2) + arrinfo%nb - 1
   elseif (extra == 1) then
-    ghi(1) = glo(1) + arrinfo%extraRows
-    ghi(2) = glo(2) + arrinfo%nb
+    ghi(1) = glo(1) + arrinfo%extraRows - 1
+    ghi(2) = glo(2) + arrinfo%nb - 1
   elseif (extra == 2) then
-    ghi(1) = glo(1) + arrinfo%mb
-    ghi(2) = glo(2) + arrinfo%extraCols
+    ghi(1) = glo(1) + arrinfo%mb - 1
+    ghi(2) = glo(2) + arrinfo%extraCols - 1
   elseif (extra == 3) then
-    ghi(1) = glo(1) + arrinfo%extraRows
-    ghi(2) = glo(2) + arrinfo%extraCols
+    ghi(1) = glo(1) + arrinfo%extraRows - 1
+    ghi(2) = glo(2) + arrinfo%extraCols - 1
   endif
 
 end subroutine localToGlobalMap 
+
+function ltog(a, x, xb, np, myp)
+  implicit none
+
+  ! Define function
+  integer :: ltog
+
+  ! Define passed parameters
+  integer, intent(in) :: a, x, xb, np, myp
+
+  ltog = (((a-x)/xb)*np+myp)*xb + x
+end function ltog
 
 ! Refer to documentation above localToGlobalMap. This subroutine calculates
 ! the local array indices for a section of the global
@@ -480,31 +496,60 @@ subroutine globalToLocalMap(glo, ghi, llo, lhi, arrinfo, blcsinfo, extra)
                                !   1 nrows is less than mb
                                !   2 ncols is less than nb
                                !   3 both nrows and ncols is less than nb and mb
-  print *, "glob to loc", glo, ghi, extra, blcsInfo%prows, blcsInfo%pcols
-  call flush(6)
+  !print *, "glob to loc", glo, ghi, extra, blcsInfo%prows, blcsInfo%pcols
+  !call flush(6)
 
+  ! Note, because of integer division the mb and nb terms cannot be canceled out
   ! ((I-1)/(Pr*MB))*MB + mod(I,MB) + 1
-  llo(1) = ((glo(1))/(blcsInfo%prows)) + mod(glo(1),arrInfo%mb) + 1
-  llo(2) = ((glo(2))/(blcsInfo%pcols)) + mod(glo(2),arrInfo%nb) + 1
+
+  llo(1) = gtol(glo(1), blcsinfo%prows, arrinfo%mb)
+  llo(2) = gtol(glo(2), blcsinfo%pcols, arrinfo%nb)
+  !llo(1) = ((glo(1)-1)/(blcsInfo%prows*arrinfo%mb))*arrinfo%mb + &
+  !  & mod((glo(1)-1),arrinfo%mb) + 1
+  !llo(2) = ((glo(2)-1)/(blcsInfo%pcols*arrinfo%nb))*arrinfo%nb + &
+  !  & mod((glo(2)-1),arrinfo%nb) + 1
+  !llo(1) = ((glo(1))/(blcsInfo%prows)) + mod(glo(1),arrInfo%mb) + 1
+  !llo(2) = ((glo(2))/(blcsInfo%pcols)) + mod(glo(2),arrInfo%nb) + 1
 
   if (extra == 0) then
-    lhi(1) = ((ghi(1))/(blcsInfo%prows))+mod(ghi(1),arrInfo%mb)+1
-    lhi(2) = ((ghi(2))/(blcsInfo%pcols))+mod(ghi(2),arrInfo%nb)+1
+    !lhi(1) = ((ghi(1))/(blcsInfo%prows))+mod(ghi(1),arrInfo%mb)+1
+    !lhi(2) = ((ghi(2))/(blcsInfo%pcols))+mod(ghi(2),arrInfo%nb)+1
+    lhi(1) = gtol(ghi(1), blcsinfo%prows, arrinfo%mb)
+    lhi(2) = gtol(ghi(2), blcsinfo%pcols, arrinfo%nb)
   elseif (extra == 1) then
+    !lhi(1) = llo(1) + arrinfo%extraRows
+    !lhi(2) = ((ghi(2))/(blcsInfo%pcols))+mod(ghi(2),arrInfo%nb)+1
     lhi(1) = llo(1) + arrinfo%extraRows
-    lhi(2) = ((ghi(2))/(blcsInfo%pcols))+mod(ghi(2),arrInfo%nb)+1
+    lhi(2) = gtol(ghi(2), blcsinfo%pcols, arrinfo%nb)
   elseif (extra == 2) then
-    lhi(1) = ((ghi(1))/(blcsInfo%prows))+mod(ghi(1),arrInfo%mb)+1
+    !lhi(1) = ((ghi(1))/(blcsInfo%prows))+mod(ghi(1),arrInfo%mb)+1
+    !lhi(2) = llo(2) + arrinfo%extraCols
+    lhi(1) = gtol(ghi(1), blcsinfo%prows, arrinfo%mb)
     lhi(2) = llo(2) + arrinfo%extraCols
   elseif (extra == 3) then
     lhi(1) = llo(1) + arrinfo%extraRows
     lhi(2) = llo(2) + arrinfo%extraCols
   endif
 
-  print *, "gtol lo", llo,lhi, arrinfo%mb, arrinfo%nb
-  call flush(6)
+  !print *, "gtol lo", llo,lhi, arrinfo%mb, arrinfo%nb
+  !call flush(6)
 
 end subroutine globalToLocalMap
+
+function gtol(I,P,xb)
+  implicit none
+
+  ! Define function
+  integer :: gtol
+
+  ! Define passed parameters
+  integer, intent(in) :: I, P, xb
+
+  ! Note, because of integer division the mb and nb terms cannot be canceled out
+  ! ((I-1)/(Pr*MB))*MB + mod(I,MB) + 1
+  gtol = ((I-1)/(P*xb)*xb) + mod((I-1),xb)+1
+end function gtol
+
 
 end module O_Parallel
 

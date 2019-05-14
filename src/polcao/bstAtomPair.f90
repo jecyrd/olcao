@@ -69,16 +69,17 @@ module O_bstAtomPair
 contains
 
 ! Subroutine to initialize the lBlockCoords data structure inside tree_vals
-subroutine initBlockCoords(node)
+subroutine initBlockCoords(node, blockrow, blockcol)
   implicit none
 
   ! Define passed parameters
   type(lBlockCoords), pointer :: node
+  integer,intent(in) :: blockrow, blockcol
 
   allocate(node)
   node%next => null()
-  node%blockrow = -1
-  node%blockcol = -1
+  node%blockrow = blockrow
+  node%blockcol = blockcol
 end subroutine initBlockCoords
 
 ! Subroutine to deallocate our lblockCoords list
@@ -139,9 +140,6 @@ subroutine tree_init(tree, val)
   tree%rchild=>null()
   tree%parent=>null()
  
-  !call initBlockCoords(tree%vvblocks)
-  !call initBlockCoords(tree%cvblocks)
-  !call initBlockCoords(tree%ccblocks)
 end subroutine tree_init
 
 recursive subroutine tree_destroy(tree)
@@ -159,8 +157,6 @@ recursive subroutine tree_destroy(tree)
   mlchild => tree%mlchild
   lchild => tree%lchild
 
-  print *, '______________________________'
-  call flush(6)
   if ( associated(lchild) ) then
     call tree_destroy(lchild)
   endif
@@ -238,17 +234,10 @@ subroutine tree_nodeType(node, ntype)
   ! Define passed parameters
   type(bst_atom_pair_node), pointer :: node
   integer, intent(out) :: ntype
-  !print *, "fark"
-  !call flush(20)
-  !print *, "asdf, " , associated(node%lval)
-  !call flush(20)
-  !print *, "val: ", (node%lval>-1)
 
   if ( associated(node%hval) .and. associated(node%mval) ) then
-  !if ( (node%hval > -1) .and. (node%mval > -1) ) then
     ntype = 4
   elseif ( associated(node%hval) .and. (.not. associated(node%mval)) ) then
-  !elseif ( (node%hval > -1) .and. (node%mval == -1) ) then
     ntype = 3
   else
     ntype = 2
@@ -350,28 +339,18 @@ subroutine tree_addVVBlock(nval, nrblock, ncblock)
 
   ! If this is true then it is the first item in the block coords list, so we
   ! can just set the values and return
-  if ((nval%vvblocks%blockrow == -1) .and. (nval%vvblocks%blockcol == -1)) then
-    nval%vvblocks%blockrow = nrblock
-    nval%vvblocks%blockcol = ncblock
-    print *, 'return',nrblock, ncblock
+  if (.not. associated(nval%vvblocks)) then
+    call initBlockCoords(nval%vvblocks, nrblock, ncblock)
     return
   endif
 
   ! If the above if block doesn't run then we need to make a new item and
   ! point to it from the last item on the linked list
-  allocate(new)
-  new%blockrow = nrblock
-  new%blockcol = ncblock
-
-  print *, "vvblock", associated(nval%vvblocks),nval%vvblocks%blockrow
-  print *, "next", associated(nval%vvblocks%next),nval%vvblocks%blockrow
-  call flush(6)
+  call initBlockCoords(new, nrblock, ncblock)
 
   ! Go to the last item in the linked list
   last => nval%vvblocks
   do while ( associated(last%next) )
-    print *, "next", associated(last%next),last%blockrow,last%blockcol
-    call flush(6)
     last => last%next
   enddo
 
@@ -391,15 +370,12 @@ subroutine tree_addCVBlock(nval, nrblock, ncblock)
   type(lBlockCoords), pointer :: last => null()
   type(lBlockCoords), pointer :: new => null()
 
-  if ((nval%cvblocks%blockrow == -1) .and. (nval%cvblocks%blockcol == -1)) then
-    nval%cvblocks%blockrow = nrblock
-    nval%cvblocks%blockcol = ncblock
+  if (.not. associated(nval%cvblocks)) then
+    call initBlockCoords(nval%cvblocks, nrblock, ncblock)
     return
   endif
 
-  allocate(new)
-  new%blockrow = nrblock
-  new%blockcol = ncblock
+  call initBlockCoords(new, nrblock, ncblock)
 
   ! Go to the last item in the linked list
   last => nval%cvblocks
@@ -423,15 +399,12 @@ subroutine tree_addCCBlock(nval, nrblock, ncblock)
   type(lBlockCoords), pointer :: last => null()
   type(lBlockCoords), pointer :: new => null()
 
-  if ((nval%ccblocks%blockrow == -1) .and. (nval%ccblocks%blockcol == -1)) then
-    nval%ccblocks%blockrow = nrblock
-    nval%ccblocks%blockcol = ncblock
+  if (.not. associated(nval%ccblocks)) then
+    call initBlockCoords(nval%ccblocks, nrblock, ncblock)
     return
   endif
 
-  allocate(new)
-  new%blockrow = nrblock
-  new%blockcol = ncblock
+  call initBlockCoords(new, nrblock, ncblock)
 
   ! Go to the last item in the linked list
   last => nval%ccblocks
@@ -520,18 +493,11 @@ subroutine tree_split(node)
   logical :: isLeaf
   
 
-  !call tree_moveMvalUp(node)
-  !print *, "After move val up"
-  !call flush(20)
-  !    
-
   call tree_isLeaf(node, isLeaf)
+
   if ( associated(node%parent) .and. .not. isLeaf ) then
-    !call tree_printTree(node%parent)
-    !print *, "printTree"
     parent => node%parent
     call tree_nodeType(parent, ntype)
-    !print *, "ntype"
     
     ! twoToThree and threeToFour both make the children correctly.
     ! What we need to do is adjust the subchildren. We first need to know

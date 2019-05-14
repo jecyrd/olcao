@@ -22,7 +22,7 @@ module O_IntegralsSCF
    contains
 
 ! Standard two center overlap integral.
-subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
+subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList)
 
    ! Import necessary modules.
    use O_Kinds
@@ -145,13 +145,25 @@ subroutine gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomList, atomTree)
    call setupArrayDesc(ccArrayInfo, BlcsInfo, coreDim, coreDim, numKPoints)
 
    ! Now we can go about figuring out what atom pairs we need to do
-   call getAtomPairs(vvArrayInfo, ccArrayInfo, cvOLArrayInfo, BlcsInfo, &
-                   & atomList, atomTree)
+   !call getAtomPairs(vvArrayInfo, ccArrayInfo, cvOLArrayInfo, BlcsInfo, &
+   !                & atomList, atomTree)
 
    currAtomPair => atomList
    
    doLoop = .true.
 
+   print *, "printing atom list"
+   do
+     print *, "pair", currAtomPair%i, currAtomPair%j
+     if (associated(currAtomPair%next)) then
+       currAtomPair => currAtomPair%next
+     else
+       exit
+     endif
+   enddo
+   
+
+   currAtomPair => atomList
    ! Begin atom-atom overlap loops.
    do while ( doLoop ) ! atomLoop = 1, size(atomPairs,1)
       i = currAtomPair%I

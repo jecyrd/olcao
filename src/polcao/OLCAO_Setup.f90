@@ -29,6 +29,8 @@ subroutine setupSCF
    use O_CoreCharge,  only: makeCoreRho
    use O_TimeStamps,  only: initOperationLabels
 
+   use O_pOLCAOhdf5,  only: accessAtomPairsHDF5
+
    ! Import the HDF5 module.
    use HDF5
 
@@ -51,7 +53,7 @@ subroutine setupSCF
 
    ! The atomPairList and atomPairTree can persist through the gaussOverlaps
    type(AtomPair), pointer :: atomPairList => null()
-   type(bst_atom_pair_node), pointer :: atomPairTree => null()
+   !type(bst_atom_pair_node), pointer :: atomPairTree => null()
 
    ! Define tau parameters
 !   integer profiler(2) / 0, 0 /
@@ -67,14 +69,17 @@ subroutine setupSCF
    call MPI_INIT (mpierr)
    call MPI_COMM_RANK (MPI_COMM_WORLD,mpiRank,mpierr)
    call MPI_COMM_SIZE (MPI_COMM_WORLD,mpiSize,mpierr)
-   print *, "1, Rank: ", mpiRank
-   call flush(20)
+
    call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
    if (mpirank==0) then
      open(6,file='proc0.out',status='unknown')
-   else
+   elseif (mpirank==1) then
      open(6,file='proc1.out',status='unknown')
+   elseif (mpirank==2) then
+     open(6,file='proc2.out',status='unknown')
+   elseif (mpirank==3) then
+     open(6,file='proc3.out',status='unknown')
    endif
 
    ! Initialize tau timer and start it.
@@ -127,12 +132,9 @@ subroutine setupSCF
 
    ! Now, the dimensions of the system are known.  Therefor we can
    !   initialize the HDF5 file structure format, and datasets.
-   print *, "Rank: ", mpiRank
    if (mpiRank == 0) then
-      print *, "Rank: ", mpiRank
       call initSetupHDF5 (maxNumRayPoints)
    endif
-   call flush(20)
    call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
    ! Construct the exchange correlation overlap matrix, and sampling field.
@@ -147,24 +149,23 @@ subroutine setupSCF
    ! Create the alpha distance matrices.
    call makeAlphaDist
 
+   ! Read in the atom pair lists
+   call accessAtomPairsHDF59(atomList, pgrid)
+
    ! Setup the BLACS interface
-   call setupBlacs(blcsinfo)
+   call setupBlacs(blcsinfo, pgrid)
 
    ! Setup the Array Desc needed to persist through overlap routines
    call setupArrayDesc(cvOLArrayInfo, BlcsInfo, coreDim, valeDim, numKPoints) 
 
-   ! Initialize atomPairList and atomPairTree
-   call initAtomPair(atomPairList)
-   !call tree_init(atomTree, initVal)
-
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomPairList, atomPairTree)
+   call gaussOverlapOL(BlcsInfo, cvOLArrayInfo, atomPairList)
    call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
    ! Calculate the matrix elements of the kinetic energy between all LCAO Bloch
    !   wave functions.
-   call gaussOverlapKE(BlcsInfo, cvOLArrayInfo, atomPairList, atomPairTree)
+   call gaussOverlapKE(BlcsInfo, cvOLArrayInfo, atomPairList)
    call MPI_Barrier(MPI_COMM_WORLD,mpierr)
 
 

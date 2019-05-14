@@ -1,0 +1,3 @@
+#!/bin/bash
+
+h5fc -g ../../parallel.f90 ./maptest.f90 -o test -lscalapack -llapack -lblas

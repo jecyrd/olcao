@@ -76,7 +76,7 @@ subroutine readGrid(atomPair_fid, pgrid)
   call MPI_COMM_RANK(MPI_COMM_WORLD, mpirank, mpierr)
   call MPI_COMM_SIZE(MPI_COMM_WORLD, mpisize, mpierr)
 
-  !if (nprocs /= mpisize) stop 'Distribution not created for this MPI World Size'
+  if (nprocs /= mpisize) stop 'Distribution not created for this MPI World Size'
 
   ! Close all datasets and groups opened by this subroutine
   call h5dclose_f(atomPairPgrid_did, hdferr)
@@ -129,7 +129,6 @@ subroutine readAtomListHDF5(atomPair_fid, atomList)
   write (rankString, "(I0)") mpirank
 
   ! Open the corresponding atomLen dataset
-  print *, 'rankString: ', rankString, len(trim(rankString))
   call h5dopen_f(atomPairLen_gid, trim(rankString), atomPairLen_did, hdferr)
   if (hdferr /=0) stop 'Failed to open the atomPairLen dataset.'
   
@@ -145,16 +144,10 @@ subroutine readAtomListHDF5(atomPair_fid, atomList)
 
   allocate(tempAtomList(2,atomLen))
   tempAtomList(:,:)=0
-  atomDims(2)=atomLen
   atomDims(1)=2
+  atomDims(2)=atomLen
   call h5dread_f(atomList_did, H5T_NATIVE_INTEGER, tempAtomList, atomDims, hdferr)
   if (hdferr /=0) stop 'Failed to read the atomList data set.'
-
-  print *, 'atomlen: ',atomLen
-  do i=1,atomLen
-    print *, tempAtomList(1,i),tempAtomList(2,i)
-    call flush(5)
-  enddo
 
   ! Now we can create the linked list that integralSCF will use. We do the first
   ! one manually.

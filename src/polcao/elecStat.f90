@@ -14,18 +14,6 @@ module O_ElectroStatics
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-   real (kind=double), allocatable, dimension (:,:) :: nonLocalResidualQ
-   real (kind=double), allocatable, dimension (:,:) :: nonLocalNeutQPot
-   real (kind=double), allocatable, dimension (:)   :: nonLocalNucQPot
-   real (kind=double), allocatable, dimension (:)   :: localNucQPot
-   real (kind=double), allocatable, dimension (:,:) :: localNeutQPot
-   real (kind=double), allocatable, dimension (:,:) :: potAlphaOverlap ! This
-      ! matrix is potDim x potDim in size and is used for multiple purposes.
-      ! It represents the overlap between all pairs of the Gaussian functions
-      ! that are used for the electronic potential and valence charge density.
-      ! The all pairs includes neighboring cells.  Note that the coefficients
-      ! in front of the Gaussian functions are not included because they are
-      ! still unknown for both the potential and valence charge density.
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -75,7 +63,11 @@ subroutine neutralAndNuclearQPot
    use O_Potential, only: potDim
 
    ! Import external subroutines.
-   use O_MathSubs
+   use O_MathSubs, only: erf
+
+   ! Import necessary modules for parallel
+   use MPI
+   use O_ParallelSetup, only: loadBalMPI
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -84,6 +76,17 @@ subroutine neutralAndNuclearQPot
    integer :: i,j,k,l,m ! Loop variables.  loop1=i, nestedloop2=j ...
    integer :: hdferr
 
+   real (kind=double), allocatable, dimension(:,:) :: nonLocalNeutQPot
+   real (kind=double), allocatable, dimension(:)   :: nonLocalNucQPot
+   real (kind=double), allocatable, dimension(:)   :: localNucQPot
+   real (kind=double), allocatable, dimension(:,:) :: localNeutQPot 
+   real (kind=double), allocatable, dimension(:,:) :: potAlphaOverlap ! This
+      ! matrix is potDim x potDim in size and is used for multiple purposes.
+      ! It represents the overlap between all pairs of the Gaussian functions
+      ! that are used for the electronic potential and valence charge density.
+      ! The all pairs includes neighboring cells. Note that hte coefficients
+      ! in front of the Gaussian Functions are not included because they are
+      ! still unknown for both the potential and valnce charge density.
 
    ! Iteration dependent variables.  For each pair of potential sites these
    !   values will change when the potential type of either site changes.
@@ -160,6 +163,10 @@ subroutine neutralAndNuclearQPot
    real (kind=double) :: coeff ! The same as the above applies to this.
    real (kind=double) :: potMagnitude
 
+   ! Parallel variables
+   integer :: minsite, maxSite ! The min and max potential site for this
+                               ! process.
+   integer :: mpiSize, mpiRank, mpierr
 
    ! Allocate space for the coulomb potential matrices that are created here.
    allocate (nonLocalNeutQPot (potDim,potDim))
@@ -302,7 +309,38 @@ subroutine neutralAndNuclearQPot
    !   map to atomic sites too.  Still, we will keep this current algorithm
    !   because it isn't all that bad even for our now simpler case of no
    !   auxiliary functions.
-   do i = 1, numPotSites
+
+   ! Initialize variables and data structores for parallel computation.
+   call MPI_Comm_size(MPI_COMM_WORLD,mpiSize,mpierr)
+   call MPI_Comm_rank(MPI_COMM_WORLD,mpirank,mpierr)
+   call loadBalMPI(numPotSites,minsite,maxsite,mpiRank,mpiSize)
+
+   ! For parallel calculation, the processes that have a minSite>1 will need
+   !    to compute the current status of a number of variables *as if* the
+   !    algorithm had been running in serial. In the future, this should be
+   !    replaced with a direct and intelligent assingment.
+   if (minSize > 1) then
+      do i=1,minsite-1
+         if (potSites(i)%firstPotType == 1) then
+            ! Assign local copies of the potential type based variables.
+            currentType(1)      = potSites(i)%potTypeAssn
+            currentNumAlphas(1) = potTypes(currentType(1))%numAlphas
+            currentAlphas(:currentNumAlphas(1),1) = &
+                  & potTypes(currentType(1))%alphas(:currentNumAlphas(1))
+            currentAlphasSqrt(:currentNumAlphas(1),1) = &
+                  & sqrt(currentAlphas(:currentNumAlphas(1),1))
+
+            ! Establish the beginning and ending indices for the set of 
+            !   alphas (potential terms) that we are dealing with out of
+            !   all of the alphas in the whole system.
+            initAlphaIndex(1)   = finAlphaIndex(1)
+            finAlphaIndex(1)    = finAlphaIndex(1) + currentNumAlphas(1)
+         endif
+      enddo
+   endif
+
+   ! Begin computing over the assigned range of sites for this process.
+   do i=minSite,maxSite ! i = 1, numPotSites
       if (potSites(i)%firstPotType == 1) then
 
          ! Assign local copies of the potential type assignment of the current
@@ -616,21 +654,74 @@ subroutine neutralAndNuclearQPot
    deallocate (currentAlphasSqrt)
    deallocate (neutralQPotCoeff)
 
-   call h5dwrite_f(potAlphaOverlap_did,H5T_NATIVE_DOUBLE, &
-         & potAlphaOverlap(:,:),potPot,hdferr)
-   if (hdferr /= 0) stop 'Failed to write pot alpha overlap'
-   call h5dwrite_f(nonLocalNeutQPot_did,H5T_NATIVE_DOUBLE, &
-         & nonLocalNeutQPot(:,:),potPot,hdferr)
-   if (hdferr /= 0) stop 'Failed to write non local neut q pot'
-   call h5dwrite_f(nonLocalNucQPot_did,H5T_NATIVE_DOUBLE, &
-         & nonLocalNucQPot(:),pot,hdferr)
-   if (hdferr /= 0) stop 'Failed to write non local nuc q pot'
-   call h5dwrite_f(localNeutQPot_did,H5T_NATIVE_DOUBLE, &
-         & localNeutQPot(:,:),potPot,hdferr)
-   if (hdferr /= 0) stop 'Failed to write local neut q pot'
-   call h5dwrite_f(localNucQPot_did,H5T_NATIVE_DOUBLE, &
-         & localNucQPot(:),pot,hdferr)
-   if (hdferr /= 0) stop 'Failed to write local nuc q pot'
+   ! Accumulate the results using MPI_REDUCE. In the future the bounds of the
+   !    local buffer that were actually used should be send explicitly so that
+   !    we don't spend extra time sending and accumulating a bunch of zeros.
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,nonLocalNeutQPot(:,:),potDim*potDim, &
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,MPIERR)
+   else
+      call MPI_REDUCE(nonLocalNeutQPot(:,:),nonLocalNeutQPot(:,:), &
+            & potDim*potDim, MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD, &
+            & mpierr)
+   endif
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,localNeutQPot(:,:),potDim*potDim, &
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(localNeutQPot(:,:),localNeutQPot(:,:),potDim*potDi, &
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   endif
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,nonLocalNucQPot(:),potDim, &
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(nonLocalNucQPot(:),nonlocalNucQPot(:),potDim, &
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   endif
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,localNucQPot(:),potDim, &
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(localNucQPot(:),potDim, &
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   endif
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,potAlphaOverlap(:,:),potDim*potDim, &
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(potAlphaOverlap(:,:),potAlphaOverlap(:,:),potDim*potDim, &
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   endif
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call h5dwrite_f(potAlphaOverlap_did,H5T_NATIVE_DOUBLE, &
+            & potAlphaOverlap(:,:),potPot,hdferr)
+      if (hdferr /= 0) stop 'Failed to write pot alpha overlap'
+      call h5dwrite_f(nonLocalNeutQPot_did,H5T_NATIVE_DOUBLE, &
+            & nonLocalNeutQPot(:,:),potPot,hdferr)
+      if (hdferr /= 0) stop 'Failed to write non local neut q pot'
+      call h5dwrite_f(nonLocalNucQPot_did,H5T_NATIVE_DOUBLE, &
+            & nonLocalNucQPot(:),pot,hdferr)
+      if (hdferr /= 0) stop 'Failed to write non local nuc q pot'
+      call h5dwrite_f(localNeutQPot_did,H5T_NATIVE_DOUBLE, &
+            & localNeutQPot(:,:),potPot,hdferr)
+      if (hdferr /= 0) stop 'Failed to write local neut q pot'
+      call h5dwrite_f(localNucQPot_did,H5T_NATIVE_DOUBLE, &
+            & localNucQPot(:),pot,hdferr)
+      if (hdferr /= 0) stop 'Failed to write local nuc q pot'
+   endif
 
    ! Dellocate the variables from the global data structures that will not
    !   be used later.

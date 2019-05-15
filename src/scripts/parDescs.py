@@ -101,14 +101,14 @@ class procDescriptor(object):
     def calcProcGrid(self):
         if (self.mpisize > 1):
             self.prows = int(m.sqrt(self.mpisize))
-            self.pcols = int(m.floor(self.mpisize / self.prows))
+            self.pcols = int(self.mpisize // self.prows))
         else:
             self.prows = 1
             self.pcols = 1
 
     def calcBlockingFactors(self):
-        self.mb = int(self.I / self.prows)
-        self.nb = int(self.J / self.pcols)
+        self.mb = int(self.I // self.prows)
+        self.nb = int(self.J // self.pcols)
     
     def calcMyCoords(self):
         # There's a way to calculate this and not loop over all blocks.
@@ -119,7 +119,7 @@ class procDescriptor(object):
         #            self.myprow = i
         #            self.mypcol = j
         #        cnt+=1
-        self.myprow = m.floor(self.mpirank/self.pcols)
+        self.myprow = self.mpirank // self.pcols
         self.mypcol = self.mpirank % self.pcols
 
     def calcOtherMetaData(self):

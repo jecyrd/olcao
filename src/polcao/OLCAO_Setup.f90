@@ -81,21 +81,18 @@ subroutine setupSCF
 !   call TAU_PROFILE_SET_NODE(0)
 
    ! Initialize the logging labels.
-   call initOperationLabels
+   call initOperationLabels()
 
    ! Parse the command line parameters
-   call parseSetupCommandLine
-
+   call parseSetupCommandLine()
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput
-
+   call parseInput()
 
    ! Find specific computational parameters not EXPLICITLY given in the input
    !   file.  These values can, however, be easily determined from the input
    !   file.
    call getImplicitInfo
-
 
    ! Create real-space and reciprocal-space super lattices out of the primitive
    !   lattice.  These "supercells" must be big enough so as to include all the
@@ -103,22 +100,18 @@ subroutine setupSCF
    !   outside the sphere are considered negligable.
    call initializeLattice (1)
 
-
    ! Setup the necessary data structures so that we can easily find the lattice
    !   vector that is closest to any other arbitrary vector.
-   call initializeFindVec
-
+   call initializeFindVec()
 
    ! Compute the kpoint phase factors.
-   call computePhaseFactors
-
+   call computePhaseFactors()
 
    ! Renormalize the basis functions
-   call renormalizeBasis
-
+   call renormalizeBasis()
 
    ! Determine the parameters for the exchange correlation mesh.
-   call getECMeshParameters
+   call getECMeshParameters()
 
    ! Now, the dimensions of the system are known.  Therefor we can
    !   initialize the HDF5 file structure format, and datasets.
@@ -184,7 +177,6 @@ subroutine setupSCF
    call cleanUpBasis()
    call cleanUpGaussRelations()
 
-
    ! Construct a vector describing the core charge density since it will not
    !   change throughout the SCF iterations because of core orthogonalization.
    if ((coreDim /= 0) .and. (mpiRank == 0)) then
@@ -221,7 +213,6 @@ subroutine setupSCF
 
    ! End the tau timer
 !   call TAU_PROFILE_STOP(profiler)
-
 
    ! Close the output file
    close (20)

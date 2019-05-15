@@ -2032,14 +2032,6 @@ subroutine nuclearPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
                & shiftedAtomPos(:), shiftedPotPos(:),&
                & l1l2Switch, oneAlphaPair)
 
-         !call nucPotInteg (oneAlphaPair,&
-         !      & currentlmAlphaIndex (alphaIndex(1),1),&
-         !      & currentlmAlphaIndex (alphaIndex(2),2),&
-         !      & currentAlphas(alphaIndex(1),1),&
-         !      & currentAlphas(alphaIndex(2),2),&
-         !      & nucAlpha,currentPosition(:,1),&
-         !      & shiftedAtomPos(:),shiftedPotPos(:))
-
          ! Accumulate the results returned for this alpha set.
          nucPotAlphaOverlap(:currentlmAlphaIndex (alphaIndex(1),1), &
                & :currentlmAlphaIndex (alphaIndex(2),2)) = &
@@ -2084,6 +2076,7 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
    real (kind=double), dimension (dim3),   intent (in)  :: shiftedAtomPos
    real (kind=double), dimension (16,16),  intent (out) :: oneAlphaPair
    real (kind=double), dimension (:,:),    intent (in)  :: currentAlphas
+
    ! Define variables for gauss integrals
    integer :: l1l2Switch
    integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
@@ -2187,11 +2180,6 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
          shiftedPotPos(:) = potPosition(:) + latticeVector2(:) + &
                & cellDimsReal(:,n)
 
-         !call threeCentInteg (currentAlphas(alphaIndex(1),1),&
-         !& currentAlphas(alphaIndex(2),2),currPotAlpha,&
-         !& currentPosition(:,1), shiftedAtomPos(:), &
-         !& shiftedPotPos(:), oneAlphaPair, l1l2Switch)
-
          ! Calculate the opcode to do the correct set of integrals
          ! for the current alpha pair
          l1l2Switch = ishft(1,&
@@ -2203,13 +2191,6 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
                & currentAlphas(alphaIndex(2),2),currPotAlpha,&
                & currentPosition(:,1), shiftedAtomPos(:), &
                & shiftedPotPos(:), l1l2Switch, oneAlphaPair)
-
-         !call threeCentInteg (oneAlphaPair,&
-         !      & currentlmAlphaIndex (alphaIndex(1),1),&
-         !      & currentlmAlphaIndex (alphaIndex(2),2),&
-         !      & currentAlphas(alphaIndex(1),1),&
-         !      & currentAlphas(alphaIndex(2),2),currPotAlpha,&
-         !      & currentPosition(:,1),shiftedAtomPos(:),shiftedPotPos(:))
 
          ! Accumulate the results returned for this alpha set.
          elecPotAlphaOverlap(:currentlmAlphaIndex(alphaIndex(1),1), &
@@ -2228,8 +2209,7 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
 
 end subroutine electronicPE
 
-
-subroutine orthoOL
+subroutine orthoOL(vvInfo,ccInfo,cvOLInfo,blcsinfo,potDim)
 
    ! Use necessary modules.
    use O_Kinds
@@ -2238,25 +2218,39 @@ subroutine orthoOL
    use O_SetupIntegralsHDF5, only: atomOverlap_did, atomDims
    use O_Orthogonalization
 
+   ! Import parallel modules
+   use MPI
+   use O_Parallel
+   use O_ParallelSetup
+
    ! Make sure that no funny variables are defined.
    implicit none
+
+   ! Define passed variables
+   type(ArrayInfo), intent(inout) :: vvInfo, ccInfo, cvOLInfo
+   type(BlacsInfo), intent(in) :: blcsinfo
+   integer, intent(in) :: potDim
 
    ! Define local variables.
    integer :: i,j,k
    integer :: hdferr
    integer :: currIndex
-   real (kind=double), allocatable, dimension (:,:) :: packedValeVale
+   integer, dimension(MPI_STATUS_SIZE) :: mpistatus
+   type(ArrayInfo) :: vcTempInfo
+   type(ArrayInfo) :: vcInfo
+   type(ArrayInfo) :: tArrInfo
+   type(BlacsInfo) :: tBlcsInfo
+   integer :: dcout, mpidtype, mpierr
+   integer, dimension(7) :: sdaya
 
-   ! Allocate space for the valeCore matrix in a pre-transposed format for
-   !   more efficient cache utilization during the matrix multiplication.  Also
-   !   allocate space to store the packed valeVale matrix.
-#ifndef GAMMA
-   allocate (valeCore (coreDim,valeDim))
-   allocate (packedValeVale (2,valeDim*(valeDim+1)/2))
-#else
-   allocate (valeCoreGamma  (coreDim,valeDim))
-   allocate (packedValeVale (1,valeDim*(valeDim+1)/2))
-#endif
+   ! Setup the local array info for the valeCore matrix formed by the
+   !    conjugate transpose of cvOL
+   call setupArrayDesc(vcInfo,blcsinfo,valeDim,coreDim,numKPoints)
+   call pcatrans(cvOLInfo,vcInfo)
+
+   ! Setup the local array info for the temporary valeCore matrixed used in
+   !    these subroutines
+   call setupArrayDesc(vcTempInfo,blcsinfo,valeDim,coreDim,numKPoints)
 
    do i = 1, numKPoints
 
@@ -2265,73 +2259,115 @@ subroutine orthoOL
       if (coreDim /= 0) then
 
 #ifndef GAMMA
-         ! Form a product of (valeCore)(coreValeOL) for the overlap
-         !   integral (valeVale).
-         call valeCoreCoreValeOL (valeDim,coreDim,valeVale(:,:,i,1),&
-               & coreValeOL(:,:,i))
 
-         ! Form product of (coreValeOL)(coreCore) in temp matrix (valeCore).
-         call coreValeCoreCore (valeDim,coreDim,valeCore(:,:),&
-               & coreValeOL(:,:,i),coreCore(:,:,i))
+         ! Initialize the vcTempInfo%local array to zero.
+         vcTempInfo%local(:,:,:) = 0.0_double
 
-         ! Finally compute the product of the above
-         !   (valeCore)(coreCore) with coreValeOL.
-         call makeValeVale (valeDim,coreDim,valeDim,valeCore(:,:),&
-               & coreValeOL(:,:,i),valeVale(:,:,i,1),packedValeVale,1,0)
+         ! Subtract 2* the product of (coreValeOL**H)(coreValeOL) from the
+         !   valeVale matrix. See documentation in intgOrtho.F90 for details.
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo,vvInfo,i)
+
+         ! Form product of (valeCoreOL)(coreCore) and store into the temp
+         !   matrix (valeCore_temp).
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo,i)
+
+         ! Finally compute the product of (valeCore_temp)(coreValeOL) and add
+         !    it to the (valeVale). This completes the orthogonalization of the
+         !    two-center overlap VV matrix against the core.
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call makeValeVale (valeDim,coreDim,vcTempInfo,cvOLInfo,vvInfo,i)
 #else
-         ! Form a product of (valeCore)(coreValeOL) for the overlap
-         !   integral (valeVale).
-         call valeCoreCoreValeOLGamma (valeDim,coreDim,&
-               & valeValeGamma(:,:,1),coreValeOLGamma)
 
-         ! Form product of (coreValeOL)(coreCore) in temp matrix (valeCore).
-         call coreValeCoreCoreGamma (valeDim,coreDim,valeCoreGamma,&
-               & coreValeOLGamma,coreCoreGamma)
+         ! Initialize the vcTempInfo%local array to zero.
+         vcTempInfo%local(:,:) = 0.0_double
 
-         ! Finally compute the product of the above
-         !   (valeCore)(coreCore) with coreValeOL.
-         call makeValeValeGamma (valeDim,coreDim,valeDim,valeCoreGamma,&
-               & coreValeOLGamma,valeValeGamma(:,:,1),packedValeVale,1,0)
-#endif
-      else
+         ! Subtract 2* the produce of (coreValeOL**T)(coreValeOL) from the
+         !    valeVale matrix. See documentation in intgOrtho.F90 for details.
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call valeCoreCoreValeOLGamma(valeDim,coreDim,cvOLInfo,vvInfo,i)
 
-         ! Initialize the index counter for packing.
-         currIndex = 0
+         ! Form product of (valeCoreOL)(coreCore) and store into the temp
+         !    matrix (valeCore_temp).
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call valeCoreCoreCoreGamma(valeDim,coreDim,vcInfo,ccInfo,vcTempInfo,i)
 
-         ! Pack the valeVale matrix.
-#ifndef GAMMA
-         do j = 1, valeDim
-            do k = 1, j
-               currIndex = currIndex + 1
-               packedValeVale(1,currIndex) = &
-                     & real(valeVale(k,j,i,1),double)
-               packedValeVale(2,currIndex) = aimag(valeVale(k,j,i,1))
-            enddo
-         enddo
-#else
-         do j = 1, valeDim
-            do k = 1, j
-               currIndex = currIndex + 1
-               packedValeVale(1,currIndex) = valeValeGamma(k,j,1)
-            enddo
-         enddo
+         ! Finally compute the product of (valeCore_temp)(coreValeOL) and add
+         !    it to the (valeVale). this completes the orthogonalization of the
+         !    two-center overlap VV matrix against the core.
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call makeValeValeGamma(valeDim,coreDim,vcTempInfo,cvInfo,vvInfo,i)
 #endif
       endif
-
-      ! Write the overlap valeVale data onto disk in HDF5 format.
-      call h5dwrite_f(atomOverlap_did(i),H5T_NATIVE_DOUBLE,&
-            & packedValeVale(:,:),atomDims,hdferr)
-      if (hdferr /= 0) stop 'Can not write atom overlap.'
    enddo
 
-   ! Deallocate remaining unnecessary matrices
-#ifndef GAMMA
-   deallocate (valeCore)
-   deallocate (packedValeVale)
+   ! Deallocate the vcTempInfo
+   call deallocLocalArray(vcTempInfo)
+   ! Deallocate the conjugate transpose of cvInfo
+   call deallocLocalArray(vcInfo)
+
+#ifndef gamma
+   mpidtype = MPI_DOUBLE_COMPLEX
 #else
-   deallocate (valeCoreGamma)
-   deallocate (packedValeVale)
+   mpidtype = MPI_DOUBLE_PRECISION
 #endif
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if(blcsInfo%mpiRank == 0) then
+      ! Write out Process 0's information
+      call writeValeVale(vvInfo,blcsInfo,numKPoints,potDim,0,0,1)
+   endif
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   ! Communicate with other processes and write out their information
+   do i=1,blcsinfo%mpisize-1
+      ! Other processes send local array
+      if (blcsinfo%mpirank == i) then
+         ! First we need information from the process about the process row, and
+         !    column. Also, we need to know the size of the array to allocate
+         sdata = (/blcsinfo%context, &
+                 & blcsinfo%prows, &
+                 & blcsinfo%pcols, &
+                 & blcsinfo%myprow, &
+                 & blcsinfo%mypcol, &
+                 & blcsinfo%mpirank, &
+                 & blcsinfo%mpisize/)
+         call MPI_Send(sdata,7,MPI_INTEGER,0,0,MPI_COMM_WORLD,mpierr)
+
+         dcout=size(vvInfo%local,1)*size(vvInfo%local,2)*size(vvInfo%local,3)
+
+         ! Now we can send the bulk of the data
+         call MPI_Send(vvInfo%local,dcount,mpidtype,0,0,MPI_COMM_WORLD,mpierr)
+
+      ! Process zero receives array and writes to disk
+      else if (blcsinfo%mpiRank == 0) then
+         ! First receive information about the process and local array
+         call MPI_Recv(sdata,7,MPI_INTEGER,i,0,MPI_COMM_WORLD,mpistatus,mpierr)
+
+         tBlcsInfo%context = sdata(1)
+         tBlcsInfo%prows = sdata(2)
+         tBlcsInfo%pcols = sdata(3)
+         tBlcsInfo%myprow = sdata(4)
+         tBlcsInfo%mypcol = sdata(5)
+         tBlcsInfo%mpirank = sdata(6)
+         tBlcsInfo%mpisize = sdata(7)
+         call setupArrayDesc(tArrInfo,blcsinfo,valeDim,valeDim,numKPoints)
+
+         dcount=size(tArrInfo%local,1)*size(tArrInfo%local,2) * & 
+               & size(tArrInfo%local,3) 
+
+         ! Receive the local array information
+         call MPI_Recv(tArrInfo%local,dcount,mpidtype,i,0,MPI_COMM_WORLD, &
+               mpistatus, mpierr)
+
+         call writeValeVale(tArrInfo,tBlcsInfo,numKPoints,potDim,0,0,1)
+
+         call deallocLocalArray(tArrInfo)
+      endif
+
+      call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   enddo
 
 end subroutine orthoOL
 

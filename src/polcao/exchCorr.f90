@@ -36,9 +36,6 @@ module O_ExchangeCorrelation
    real (kind=double) :: rSampleSpace ! This is the spacing of the sample
          !   points.
 
-   real (kind=double), allocatable, dimension (:)     :: radialWeight
-   real (kind=double), allocatable, dimension (:,:)   :: exchCorrOverlap
-   real (kind=double), allocatable, dimension (:,:,:) :: exchRhoOp
    integer :: numRayPoints    ! Number of ray points for a specific potential
                               !   site.  Also used to determine the max.
    integer :: maxNumRayPoints ! Max number of ray points of all the potential
@@ -60,9 +57,10 @@ module O_ExchangeCorrelation
    contains
 
 
-subroutine getECMeshParameters
+subroutine getECMeshParameters()
 
    ! Include the modules we need.
+   use MPI
    use O_Kinds
    use O_Constants, only: dim3, smallThresh
    use O_Lattice, only: numCellsReal, cellDimsReal, findLatticeVector
@@ -111,10 +109,15 @@ subroutine getECMeshParameters
    ! Local factors and coefficients updated through loop iterations
    real (kind=double) :: covalentRadiusFactor
 
+   ! Define local mpi parameters
+   integer :: mpiRank, mpierr
 
    ! Start collecting the exchange correlation mesh point counts.
    call timeStampStart(5)
 
+   ! Get the process rank to avoid having every process write out the
+   !    exchCorr mesh.
+   call MPI_Comm_rank(MPI_COMM_WORLD,mpiRank,mpierr)
 
    ! Determine the number of cell replications that must be considered to find
    !   the exchange correlation matrix parameters.  (i.e. can the real super
@@ -131,7 +134,7 @@ subroutine getECMeshParameters
 
    ! In the event that someone wants the exchange correlation mesh printed
    !   for visualization, then this is where that starts.
-   if (printXCMesh == 1) then
+   if ((printXCMesh == 1) .and. (mpiRank == 0)) then
       write (200,*) numPotSites
       write (200,*) numSampleVectors
    endif
@@ -142,7 +145,7 @@ subroutine getECMeshParameters
 
       ! If requested, print the position of the potential site for plotting of
       !   the XC mesh.
-      if (printXCMesh == 1) then
+      if ((printXCMesh == 1) .and. (mpiRank == 0)) then
          write (200,*) potSites(i)%cartPos(:)
       endif
 
@@ -260,7 +263,7 @@ subroutine getECMeshParameters
 
          ! If requested, print the unit vector describing the current ray
          !   direction and the radius of that ray.  (For XCMesh)
-         if (printXCMesh == 1) then
+         if ((printXCMesh == 1) .and. (mpiRank == 0)) then
             write (200,*) currentAngleVector(:), currentPointRadius
          endif
 
@@ -295,14 +298,14 @@ subroutine getECMeshParameters
             currentPointRadius = currentPointRadius * rSampleSpace
 
             ! If requested, print the radius of the current point on the ray.
-            if (printXCMesh == 1) then
+            if ((printXCMesh == 1) .and. (mpiRank == 0)) then
                write (200,*) currentPointRadius
             endif
          enddo
 
          ! If the request to print the XCMesh is true, then we are done doing
          !   it for this ray and we print "END" to signify that.
-         if (printXCMesh == 1) then
+         if ((printXCMesh == 1) .and. (mpiRank == 0)) then
             write (200,*) "END"
          endif
       enddo
@@ -313,15 +316,17 @@ subroutine getECMeshParameters
       numRayPoints = max (currentNumRayPoints,numRayPoints)
 
       ! Record that this loop has finished
-      if (mod(i,10) .eq. 0) then
-         write (20,ADVANCE="NO",FMT="(a1)") "|"
-      else
-         write (20,ADVANCE="NO",FMT="(a1)") "."
+      if (mpiRank == 0) then
+         if (mod(i,10) .eq. 0) then
+            write (20,ADVANCE="NO",FMT="(a1)") "|"
+         else
+            write (20,ADVANCE="NO",FMT="(a1)") "."
+         endif
+         if (mod(i,50) .eq. 0) then
+            write (20,*) " ",i
+         endif
+         call flush (20)
       endif
-      if (mod(i,50) .eq. 0) then
-         write (20,*) " ",i
-      endif
-      call flush (20)
    enddo
 
    ! At this point, the numRayPoints is the maximum possible number of points
@@ -341,6 +346,7 @@ end subroutine getECMeshParameters
 subroutine makeECMeshAndOverlap
 
    ! Include the modules we need
+   use MPI
    use O_Kinds
    use O_Constants, only: dim3, smallThresh
    use O_Lattice, only: logElecThresh, numCellsReal, cellSizesReal, &
@@ -349,6 +355,7 @@ subroutine makeECMeshAndOverlap
    use O_PotTypes, only: potTypes, maxNumPotAlphas
    use O_Potential, only: potDim, GGA
    use O_TimeStamps
+   use O_ParallelSetup, only: loadBalMPI
 
    ! Import the necessary HDF modules
    use HDF5
@@ -411,17 +418,29 @@ subroutine makeECMeshAndOverlap
    real (kind=double) :: radialmagnitude
    real (kind=double) :: currentAlphaMagnitude
 
+   ! Define the main data structures.
+   real (kind=double), allocatable, dimension (:) :: radialWeight
+   real (kind=double), allocatable, dimension (:,:) :: exchCorrOverlap
+   real (kind=double), allocatable, dimension (:,:,:) :: exchRhoOp
+
    ! These are the different distances that will be needed for the
    ! first and second derivatives of rho.
-   real (kind=double) :: xdistance
-   real (kind=double) :: ydistance
-   real (kind=double) :: zdistance
-   real (kind=double) :: xxdistance
-   real (kind=double) :: xydistance
-   real (kind=double) :: xzdistance
-   real (kind=double) :: yydistance
-   real (kind=double) :: yzdistance
-   real (kind=double) :: zzdistance
+   real (kind=double) :: xdistance = 0.0_double
+   real (kind=double) :: ydistance = 0.0_double
+   real (kind=double) :: zdistance = 0.0_double
+   real (kind=double) :: xxdistance = 0.0_double
+   real (kind=double) :: xydistance = 0.0_double
+   real (kind=double) :: xzdistance = 0.0_double
+   real (kind=double) :: yydistance = 0.0_double
+   real (kind=double) :: yzdistance = 0.0_double
+   real (kind=double) :: zzdistance = 0.0_double
+
+   ! Define variables for parallel operation
+   integer :: mpi_i
+   integer :: mpipoints
+   integer :: maxsite, minsite
+   integer :: mpiSize, mpiRank, mpierr
+   integer, dimension (MPI_STATUS_SIZE) :: mpistatus
 
    ! We need to know the size of the last dimension in the exchRhoOp matrix.
    !   This value is determined by whether or not we are doing an LDA (1) or a
@@ -430,17 +449,6 @@ subroutine makeECMeshAndOverlap
 
    ! Start making the exchange correlation matrices and mesh points.
    call timeStampStart(7)
-
-   ! Initialize variables to avoid compiler warnings.
-   xdistance = 0.0_double
-   ydistance = 0.0_double
-   zdistance = 0.0_double
-   xxdistance = 0.0_double
-   xydistance = 0.0_double
-   xzdistance = 0.0_double
-   yydistance = 0.0_double
-   yzdistance = 0.0_double
-   zzdistance = 0.0_double
 
    ! Pull variables out of the large data structures and assign local values
    !   to them.
@@ -473,7 +481,18 @@ subroutine makeECMeshAndOverlap
    currentNegligLimit  = 0.0_double
    currentNumPotAlphas = 0
 
-   do i = 1, numPotSites
+   ! Get MPI Information
+   call MPI_Comm_size(MPI_COMM_WORLD, mpiSize, mpierr)
+   call MPI_Comm_rank(MPI_COMM_WORLD, mpiRank, mpierr)
+
+   ! Load balance pot sites
+   call loadBalMPI(numPotSites, minSite, maxSite, mpiRank, mpiSize)
+
+   do i = minSite, maxSite
+
+      ! Initialize the exchCorrOverlap to zero so that it may be accumulated
+      !   through MPI calls.
+      exchCorrOverlap(:,:) = 0.0_double
 
       ! Initialize the radialWeight to zero for each potential iteration.
       radialWeight(:) = 0.0_double
@@ -777,18 +796,75 @@ subroutine makeECMeshAndOverlap
 
       ! Save values calculated from this potential site loop.
 
-      ! Write the values for the radialWeight and exchRhoOp in HDF5 format.
-      call h5dwrite_f(numPoints_did(i),H5T_NATIVE_INTEGER, &
-            & numRayPoints,numPoints,hdferr)
-      if (hdferr /= 0) stop 'Failed to write num ray points'
-      call h5dwrite_f(radialWeight_did(i),H5T_NATIVE_DOUBLE, &
-            & radialWeight(:),points,hdferr)
-      if (hdferr /= 0) stop 'Failed to write radial weights'
-      call h5dwrite_f(exchRhoOp_did(i),H5T_NATIVE_DOUBLE, &
-            & exchRhoOp(:,:,:),potPoints,hdferr)
-      if (hdferr /= 0) stop 'Failed to write exchange rho operator'
+      ! Have process zero store its own results in HDF5 format and then collect
+      !    results for the radialWeight and exchRhoOp one at a time and store
+      !    them to disk in HDF5 format.
+      call MPI_Barrier (MPI_COMM_WORLD, mpierr)
 
+      mpipoints = numPoints(1)
+      if (mpiRank == 0) then
+         call h5dwrite_f(numPoints_did(i),H5T_NATIVE_INTEGER,numRayPoints, &
+            & numPoints, hdferr)
+         if (hdferr /= 0) stop 'Failed to write num ray points'
+         call h5dwrite_f(radialWeight_did(i), H5T_NATIVE_DOUBLE, &
+            & radialWeight(:), points, hdferr)
+         if (hdferr /= 0) stop 'Failed to write raidal weights'
+         call h5dwrite_f(exchRhoOp_did(i), H5T_NATIVE_DOUBLE, &
+            & exchRhoOp(:,:,:), potPoints, hdferr)
+         if (hdferr /= 0) stop 'Failed to write exchange rho operator'
 
+         do j = 1, mpiSize-1
+
+            ! Get the index number of the potSite loop (i) from the MPI process.
+            call MPI_RECV (mpi_i,1,MPI_INTEGER,j,0,MPI_COMM_WORLD, &
+               & mpistatus, mpierr)
+
+            ! Receive the number of ray points from process j and write to disk.
+            call MPI_RECV (numPoints,1,MPI_INTEGER,j,1,MPI_COMM_WORLD, &
+               & mpistatus, mpierr)
+
+            call h5dwrite_f(numPoints_did(mpi_i),H5_NATIVE_INTEGER, &
+               & numRayPoints,numPoints,hdferr)
+            if (hdferr /= 0) stop 'Failed to write num ray points. Proc:',j
+
+            ! Receive the radial weights for those ray points and write to disk.
+            call MPI_RECV (radialWeight(1:numPoints(1)),mpipoints, &
+               & MPI_DOUBLE_PRECISION,j,2,MPI_COMM_WORLD,mpistatus,mpierr)
+
+            call h5dwrite_f(radialWeight_did(mpi_i),H5T_NATIVE_DOUBLE, &
+               & radialWeight(:),points,hdferr)
+            if (hdferr /= 0) stop 'Failed to write radial weights, Proc:',j
+
+            ! Receive the exchRhoOp from process j and write to disk.
+            call MPI_RECV (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
+               & MPI_DOUBLE_PRECISION,j,3,MPI_COMM_WORLD,mpistatus, &
+               & mpierr)
+
+            call h5dwrite_f(exchRhoOp_did(mpi_i), H5T_NATIVE_DOUBLE, &
+               & exchRhoOp(:,:,:),potPoints,hdferr)
+            if (hdferr /= 0) stop 'Failed to write exchRhoOp. Proc:',j
+         enddo
+      else
+
+         ! Send the results to process 0.
+
+         ! Send the index number of the potSite loop (i) to process zero.
+         call MPI_SEND (i,1,MPI_INTEGER,0,0,MPI_COMM_WORLD,mpierr)
+
+         ! Send the number of ray points to process zero.
+         call MPI_SEND (numPoints,1,MPI_INTEGER,0,1,MPI_COMM_WORLD,mpierr)
+
+         ! Send the radial weights of those ray points to process zero.
+         call MPI_SEND (radialWeight(1:numPoints(1)),mpipoints, &
+            & MPI_DOUBLE_PRECISION,0,2,MPI_COMM_WORLD,mpierr)
+
+         ! Send the exchRhoOp to process zero.
+         call MPI_SEND (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues, &
+            & MPI_DOUBLE_PRECISION,0,3,MPI_COMM_WORLD,mpierr)
+      endif
+! This needs to be modified to work in a parallel environment a little better.
+! Perhaps send progress reports to process 0 and then let only process 0 write.
+! For now we'll just let all processes output it and make it messy.
       ! Record the progress so far.
       if (mod(i,10) .eq. 0) then
          write (20,ADVANCE="NO",FMT="(a1)") "|"
@@ -803,10 +879,25 @@ subroutine makeECMeshAndOverlap
 
    ! Save to disk the overlap that was accumulated through each loop
 
-   ! Write the exchCorrOverlap to disk in HDF5 format.
-   call h5dwrite_f(exchCorrOverlap_did,H5T_NATIVE_DOUBLE, &
-         & exchCorrOverlap(:,:),potPot,hdferr)
-   if (hdferr /= 0) stop 'Failed to write exch corr overlap'
+   ! Accumulate the exchCorrOverlap results into the process 0 array.
+   if (mpiRank == 0) then
+      call MPI_REDUCE (MPI_IN_PLACE,exchCorrOverlap,potDim*potDim, &
+         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE (exchCorrOverlap,exchCorrOverlap,potDim*potDim, &
+         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   endif
+
+   ! Synchronize all processes so that we can be sure it is okay for process
+   !    number 0 to write the results to disk via hdf5.
+   call MPI_BARRIER (MPI_COMM_WORLD, mpierr)
+
+   if (mpiRank == 0) then
+      ! Write the exchCorrOverlap to disk in HDF5 format.
+      call h5dwrite_f(exchCorrOverlap_did,H5T_NATIVE_DOUBLE, &
+            & exchCorrOverlap(:,:),potPot,hdferr)
+      if (hdferr /= 0) stop 'Failed to write exch corr overlap'
+   endif
 
    ! Deallocate space for matrices and arrays that are used only locally.
    deallocate (currentPotAlphas)

@@ -13,6 +13,7 @@ module O_PotentialUpdate
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+<<<<<<< HEAD
    ! Define variables used to update the solid state potential. These arrays are
    !   retained across all SCF iterations.
    real (kind=double), allocatable, dimension (:) :: convergenceRecord
@@ -43,6 +44,15 @@ module O_PotentialUpdate
 !   real (kind=double), allocatable, dimension (:,:) :: yl0,yl1,yl2 ! Holds the
 !         !   guesses for the next set of potential coefficients from the
 !         !   current and previous two iterations.
+=======
+   ! Define variables used to update the solid state potential.
+   real (kind=double), allocatable, dimension (:,:) :: xl0,xl1,xl2 ! Holds the
+         !   actually used potential coefficients from the current and previous
+         !   two iterations.
+   real (kind=double), allocatable, dimension (:,:) :: yl0,yl1,yl2 ! Holds the
+         !   guesses for the next set of potential coefficients from the
+         !   current and previous two iterations.
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -59,7 +69,10 @@ subroutine makeSCFPot (totalEnergy)
    use O_TimeStamps
    use O_Input, only: numElectrons
    use O_Populate, only: occupiedEnergy
+<<<<<<< HEAD
    use O_KPoints, only: numKPoints
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    use O_Constants, only: smallThresh
    use O_AtomicTypes, only: atomTypes
    use O_AtomicSites, only: coreDim
@@ -73,15 +86,22 @@ subroutine makeSCFPot (totalEnergy)
          & exchRhoOp_did, exchCorrOverlap_did, numPoints, points, potPoints
    use O_Potential, only: spin, potDim, intgConsts, spinSplitFactor, &
          & potAlphas, potCoeffs, currIteration, lastIteration, feedbackLevel, &
+<<<<<<< HEAD
          & relaxFactor, xcCode, converged, convgTest, GGA, numPlusUJAtoms, &
          & plusUJAtomID, plusUJ
+=======
+         & relaxFactor, xcCode, converged, convgTest
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    use O_SetupElecStatHDF5, only: potAlphaOverlap_did, coreChargeDensity_did, &
          & nonLocalNeutQPot_did, localNeutQPot_did, localNucQPot_did, &
          & nonLocalNucQPot_did, nonLocalResidualQ_did, pot, potPot, potTypesPot
    use O_ValeCharge, only: potRho, chargeDensityTrace, nucPotTrace, &
          & kineticEnergyTrace
+<<<<<<< HEAD
    use O_MainPotRhoHDF5, only: potCoeffs_did, totalRhoCoeffs_did, &
          & valeRhoCoeffs_did, spinDiffRhoCoeffs_did, alphas_did, terms
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -92,9 +112,12 @@ subroutine makeSCFPot (totalEnergy)
    ! Define the local variables used in this subroutine.
    integer :: i,j,k ! Loop index variables
    integer :: hdferr
+<<<<<<< HEAD
    integer :: errorCount
    integer :: info
    integer :: numOpValues
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    integer :: currentType
    integer :: currentNumAlphas
    integer :: currentCumulAlphaSum
@@ -102,17 +125,23 @@ subroutine makeSCFPot (totalEnergy)
    integer :: potTypeFinIndex
    integer :: siteIndex
    integer :: potTermCount
+<<<<<<< HEAD
    integer :: currNumAlphas
    integer :: maxFeedback
    integer :: totalEnergyImprovement
    real (kind=double) :: fittedCharge
    real (kind=double) :: fittedSpinDiffCharge
    real (kind=double) :: spinDiffDifference
+=======
+   real (kind=double) :: fittedCharge
+   real (kind=double) :: fittedSpinDiffCharge
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    real (kind=double) :: electronDiff
    real (kind=double) :: currentNucCharge
    real (kind=double) :: sumIntegratedCharge
    real (kind=double) :: kineticEnergy
    real (kind=double) :: exchCorrEnergy
+<<<<<<< HEAD
    real (kind=double) :: exchCorrEnergyDiff
    real (kind=double) :: elecStatEnergy
    real (kind=double) :: elecStatEnergyDiff
@@ -142,29 +171,45 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double) :: SZS
 
    real (kind=double) :: blendingFactor
+=======
+   real (kind=double) :: elecStatEnergy
+   real (kind=double) :: elecStatEnergyDiff
+   real (kind=double) :: coreSum
+   real (kind=double) :: spinDiffSum
+   real (kind=double) :: nonCoreTotalSum
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    real (kind=double) :: testableDelta
    real (kind=double) :: radialWeightSum
    real (kind=double) :: weightedPotDiff
    real (kind=double) :: totalMagneticMoment
    real (kind=double), dimension (4) :: currentExchCorrPot
+<<<<<<< HEAD
    real (kind=double), dimension (2) :: totalEnergySpin
    real (kind=double), dimension (2) :: kineticEnergySpin
    real (kind=double), dimension (2) :: exchCorrEnergySpin
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    real (kind=double), allocatable, dimension (:,:) :: generalRho
    real (kind=double), allocatable, dimension (:,:) :: tempOverlap
    real (kind=double), allocatable, dimension (:,:) :: elecStatPot
    real (kind=double), allocatable, dimension (:,:) :: exchCorrPot
    real (kind=double), allocatable, dimension (:,:) :: exchCorrRho
+<<<<<<< HEAD
    real (kind=double), allocatable, dimension (:,:) :: exchCorrRhoCore
    real (kind=double), allocatable, dimension (:,:) :: exchCorrRhoSpin
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    real (kind=double), allocatable, dimension (:,:) :: outputPot
    real (kind=double), allocatable, dimension (:,:) :: realSpacePotDiff
    real (kind=double), allocatable, dimension (:)   :: averageDelta
    real (kind=double), allocatable, dimension (:)   :: maxDelta
    real (kind=double), allocatable, dimension (:)   :: typesMagneticMoment
+<<<<<<< HEAD
    real (kind=double), allocatable, dimension (:,:) :: potDifference ! Holds
          ! the difference between the currently used potential coefficients and
          ! the current guess for the next set of potential coefficients.
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    real (kind=double) :: th1
    real (kind=double) :: th2
@@ -198,6 +243,7 @@ subroutine makeSCFPot (totalEnergy)
       generalRho(:,3)  = potRho(:,2)  !  Spin up - Spin down
    endif
 
+<<<<<<< HEAD
 !write (20,*) "potRho 1 iter",currIteration
 !write (20,*) potRho(:,1)
 !write (20,*) "potRho 2 iter",currIteration
@@ -208,6 +254,8 @@ subroutine makeSCFPot (totalEnergy)
 !enddo
 !call flush(20)
 
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    ! Deallocate the potRho since it will not be needed until the
    !   next scf iteration calls makeValenceRho.
    deallocate (potRho)
@@ -229,6 +277,7 @@ subroutine makeSCFPot (totalEnergy)
    ! Solve the linear set of equations with LAPACK to get the coefficients for
    !   total valence charge and (for spin polarized calcs.) the spin difference
    !   of the valence charge.
+<<<<<<< HEAD
    call solveDPOSVX (potDim,spin+1,tempOverlap,potDim,generalRho(:,:spin+1),&
          & info)
 
@@ -239,11 +288,18 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Now we need to make sure that the spin difference is scaled in the same
    !   way as the total charge was.
+=======
+   call solveDPOSVX (potDim,spin+1,tempOverlap,potDim,generalRho(:,:spin+1))
+
+   ! Compute the fitted valence charge.  (Up + Down for spin polarized calcs.)
+   fittedCharge = dot_product(intgConsts(:potDim),generalRho(:potDim,1))
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    if (spin == 2) then
       ! Compute the fitted valence charge difference.  (Up - Down)
       fittedSpinDiffCharge = dot_product(intgConsts(:potDim),&
             & generalRho(:potDim,3))
 
+<<<<<<< HEAD
       ! Compare the fitted charge difference to the charge difference computed
       !   from the charge density matrix (in valeCharge.f90). We will treat the
       !   earlier charge spin difference as the "real one".
@@ -270,6 +326,12 @@ subroutine makeSCFPot (totalEnergy)
    
    ! Compute the fitted valence charge.  (Up + Down for spin polarized calcs.)
    fittedCharge = dot_product(intgConsts(:potDim),generalRho(:potDim,1))
+=======
+      ! Preserve the spin (UP-DOWN) charge density coefficients in 
+      !   generalRho(:,8).
+      generalRho(:potDim,8) = generalRho(:potDim,3)
+   endif
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Calculate the difference between the electron number and the fitted charge
    !   determined above.  This represents the difficulty of the Gaussians to
@@ -277,7 +339,11 @@ subroutine makeSCFPot (totalEnergy)
    electronDiff = numElectrons - fittedCharge
 
    ! Record the electron fitting error.
+<<<<<<< HEAD
    write (20,fmt="(a37,e16.8,a8,i8)") &
+=======
+   write (20,fmt="(a37,f12.8,a8,i12)") &
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
          & 'Unconstrained Vale Electron Fit Error',&
          & electronDiff, ' Out Of ',numElectrons
    call flush (20)
@@ -289,8 +355,11 @@ subroutine makeSCFPot (totalEnergy)
    generalRho(:potDim,2) = generalRho(:potDim,1) + generalRho(:potDim,2) * &
          & electronDiff / sum(intgConsts(:potDim)*generalRho(:potDim,2))
 
+<<<<<<< HEAD
    ! Similarly scale and store the spin difference.
 
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    ! Demonstrate that the constrained fit will produce an exact valence charge.
    write (20,*) "Constrained fit num e- = ",dot_product(intgConsts(:potDim), &
          & generalRho(:potDim,2))
@@ -313,6 +382,7 @@ subroutine makeSCFPot (totalEnergy)
    ! Read the core charge density into generalRho 3.
    if (coreDim /= 0) then
       call h5dread_f (coreChargeDensity_did,H5T_NATIVE_DOUBLE,&
+<<<<<<< HEAD
             & generalRho(:,3),pot,hdferr)
       if (hdferr /= 0) stop 'Failed to read core charge density'
    else
@@ -363,6 +433,21 @@ subroutine makeSCFPot (totalEnergy)
             & terms,hdferr)
       if (hdferr /= 0) stop 'Cannot write Gaussian exponential alpahs.'
    endif
+=======
+            & generalRho(:potDim,3),pot,hdferr)
+      if (hdferr /= 0) stop 'Failed to read core charge density'
+   else
+      generalRho(:potDim,3) = 0.0_double
+   endif
+
+   ! At present generalRho(:,2) holds the valence coefficients for both the
+   !   spin polarized and non spin polarized case.  The generalRho(:,3) holds
+   !   the core charge coefficients.  We will now compute the total and store
+   !   it in generalRho(:,1).
+   generalRho(:potDim,1) = generalRho(:potDim,2) + generalRho(:potDim,3)
+
+   
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Divide the charge so far into neutral spherically symmetric pieces and a
    !   residual part.  The previous sentence is the original documentation, but
@@ -370,6 +455,7 @@ subroutine makeSCFPot (totalEnergy)
    !   density (3) with the adjusted valence charge density (2) and store the
    !   result in (1).  In the case of spin polarized calculations, (2) is also
    !   the total valence charge density, and is considered to be the up+down.
+<<<<<<< HEAD
    !   generalRho(:,1) = TOTAL      CHARGE (CORE + VALENCE) and (UP + DOWN)
    !   generalRho(:,2) = VALENCE    CHARGE
    !   generalRho(:,3) = CORE       CHARGE
@@ -379,10 +465,21 @@ subroutine makeSCFPot (totalEnergy)
    !   generalRho(:,7) = NUCLEAR    CHARGE (Held in last index of each type.)
    !   generalRho(:,8) = DIFFERENCE CHARGE (SPIN DIFFERENCE or ABSENT)
    ! As a (possibly obvious) note: All charges are from e- except for NUCLEAR.
+=======
+   !   generalRho(:,1) = TOTAL      CHARGE  (CORE + VALENCE)
+   !   generalRho(:,2) = VALENCE    CHARGE
+   !   generalRho(:,3) = CORE       CHARGE
+   !   generalRho(:,4) = NEUTRAL    CHARGE
+   !   generalRho(:,5) = RESIDUAL   CHARGE 1?
+   !   generalRho(:,6) = RESIDUAL   CHARGE 2?
+   !   generalRho(:,7) = NUCLEAR    CHARGE
+   !   generalRho(:,8) = DIFFERENCE CHARGE (SPIN DIFFERENCE or ABSENT)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    generalRho(:,4) = generalRho(:,1)
    generalRho(:,5) = 0.0_double
    generalRho(:,6) = 0.0_double
    generalRho(:,7) = 0.0_double
+<<<<<<< HEAD
 !write (20,*) "generalRho1 iter",currIteration
 !write (20,*) generalRho(:,1)
 !write (20,*) "generalRho2 iter",currIteration
@@ -392,14 +489,19 @@ subroutine makeSCFPot (totalEnergy)
 !write (20,*) "generalRho4 iter",currIteration
 !write (20,*) generalRho(:,4)
 !call flush(20)
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! This part is not well documented.  But later it is mentioned that the
    !   goal is to simulate the nuclear charges by affecting the shortest
    !   range potential in a way by the nuclear charge.
+<<<<<<< HEAD
    ! Compute the difference between the nuclear charge and the total (up+down,
    !   core+valence) charge that is at the site associated with this type.
    !   Then, modify the first coefficient of the total (u+d,c+v) charge so that
    !   the broadest Gaussian reflects that deviation from neutral.
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    do i = 1,numPotTypes
 
       ! Initialize variables for the current potential type
@@ -407,6 +509,7 @@ subroutine makeSCFPot (totalEnergy)
       currentNucCharge = potTypes(i)%nucCharge * potTypes(i)%multiplicity
       currentCumulAlphaSum = potTypes(i)%cumulAlphaSum
 
+<<<<<<< HEAD
       ! Identify the beginning and ending indices of the list of potential
       !   and fitted charge density terms for this potential type (from the
       !   full list of all potential terms for the whole system).
@@ -418,10 +521,19 @@ subroutine makeSCFPot (totalEnergy)
       !   contributions from all sites of this type. This is just one "generic"
       !   site of this current type. Note also that this is pulled from
       !   generalRho(:,1) which is up+down and core+valence.
+=======
+      ! Identify the indices of the summations.
+      potTypeInitIndex = currentCumulAlphaSum + 1
+      potTypeFinIndex  = currentCumulAlphaSum + currentNumAlphas
+
+      ! Calculate the sum of the coefficients of integration times the total
+      !   charge determined for this potential type.
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
       sumIntegratedCharge = sum(intgConsts(potTypeInitIndex:potTypeFinIndex) * &
             & generalRho(potTypeInitIndex:potTypeFinIndex,1))
 
       ! Assign values to generalRho (:,4:7)
+<<<<<<< HEAD
 
       ! Store the difference between the fitted charge for this type and the
       !   nuclear charge associated with sites of this type. Note that all
@@ -528,6 +640,22 @@ subroutine makeSCFPot (totalEnergy)
    !   affecting charges on a given site. The local terms will describe
    !   contributions from charges on the same site as charge on a given site.
 
+=======
+      generalRho(potTypeInitIndex,5)=(sumIntegratedCharge-currentNucCharge) / &
+            & intgConsts(potTypeInitIndex)
+
+      generalRho(potTypeInitIndex,4) = generalRho(potTypeInitIndex,1) - &
+            & generalRho(potTypeInitIndex,5)
+
+      generalRho(i,6) = generalRho(potTypeInitIndex,5)
+
+      generalRho(potTypeFinIndex,7) = -currentNucCharge / &
+            & intgConsts(potTypeFinIndex)
+   enddo
+
+
+   ! Allocate space for the electrostatic potential
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    allocate (elecStatPot (potDim,6))
 
 
@@ -541,6 +669,7 @@ subroutine makeSCFPot (totalEnergy)
    if (hdferr /= 0) stop 'Failed to read non local neut q pot'
 
 
+<<<<<<< HEAD
    ! Operate on the spherically symmetric neutral charge. After this, the
    !   elecStatPot(:,1) will hold quantities that describe the electrostatic
    !   potential due to the electronic (Q) influence of all other sites (hence
@@ -548,6 +677,9 @@ subroutine makeSCFPot (totalEnergy)
    !   removed (hence "NeutQ") that will ultimately be "felt" by other fitted
    !   charge terms of some kind <rho|. (Side note, recall that generalRho(:,4)
    !   holds the neutral total charge (core+valence and up+down).)
+=======
+   ! Operate on the spherically symmetric neutral charge.
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    do i = 1,potDim
       elecStatPot(i,1) = sum (nonLocalNeutQPot(:,i) * generalRho(:,4))
    enddo
@@ -564,6 +696,7 @@ subroutine makeSCFPot (totalEnergy)
    if (hdferr /= 0) stop 'Failed to read local neut q pot'
 
 
+<<<<<<< HEAD
    ! Operate on the (valence - residual) and core charges seperately. Recall
    !   that generalRho(:,5) is all zeros except for the first term of each
    !   type. That first term is used to represent the deviation from neutral
@@ -582,6 +715,9 @@ subroutine makeSCFPot (totalEnergy)
    !   potential due to the electrostatic influence of core electronic charge
    !   *at the same site* (hence "local") as a given other charge term (to be
    !   identified later).
+=======
+   ! Operate on the (valence - residual) and core charges seperately.
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    do i = 1, potDim
       elecStatPot(i,2) = sum(localNeutQPot(:,i) * &
             & (generalRho(:,2) - generalRho(:,5)))
@@ -591,14 +727,26 @@ subroutine makeSCFPot (totalEnergy)
    deallocate (localNeutQPot)
 
 
+<<<<<<< HEAD
    ! Read in the nonlocal nuclear integral vector (gaussian screened). This
    !   vector is basically just like the below vector except that it describes
    !   the potential at a site due to nuclei at other sites.
+=======
+   ! Read in the local nuclear integral vector
+   call h5dread_f (localNucQPot_did,H5T_NATIVE_DOUBLE,&
+         & elecStatPot(:,5),pot,hdferr)
+   if (hdferr /= 0) stop 'Failed to read local nuc q pot'
+
+
+
+   ! Read in the non local nuclear integral vector (gaussian screeneed)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    call h5dread_f (nonLocalNucQPot_did,H5T_NATIVE_DOUBLE,&
          & elecStatPot(:,4),pot,hdferr)
    if (hdferr /= 0) stop 'Failed to read non local nuc q pot'
 
 
+<<<<<<< HEAD
    ! Read in the local nuclear integral vector. This vector (elecStatPot(:,5))
    !   already holds the potential at a given site due to nuclear charges at
    !   the same site as the given type (hence "NucQ" and "local"). This
@@ -611,22 +759,37 @@ subroutine makeSCFPot (totalEnergy)
          & elecStatPot(:,5),pot,hdferr)
    if (hdferr /= 0) stop 'Failed to read local nuc q pot'
 
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Allocate space for the reciprocal-space potential operator.
    allocate (nonLocalResidualQ (numPotTypes,potDim))
 
+<<<<<<< HEAD
    ! Read in the reciprocal-space potential operator.
+=======
+   ! Read in the reciprocal-space potential operator
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    call h5dread_f (nonLocalResidualQ_did,H5T_NATIVE_DOUBLE,&
          & nonLocalResidualQ(:,:),potTypesPot,hdferr)
    if (hdferr /= 0) stop 'Failed to read local residual q pot'
 
 
 
+<<<<<<< HEAD
    ! Operate on the residual charge. The residual (a.k.a. polar) charge
    !   influence converges much faster in reciprocal space than it does in real
    !   space. This is why it was separated out. Read about Ewald summation.
    ! Note that elecStatPot(:,6) = Electrostatic potential from the residual
    !   charge located on other sites.
+=======
+   ! Operate on the residual charge.
+   ! elecStat(:,6) = Electrostatic potential from the residual charge.
+   ! sum(elecStat(:,1,2,3,5,6)) = Total electrostatic potential.
+   ! Then subtract the gaussian screened nuclear charge (elecStat(:,4)) from
+   !   the above sum to obtain the electrostatic potential needed for the
+   !   SCF calculations.
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    do i = 1,potDim
       elecStatPot(i,6) = sum(nonLocalResidualQ(:numPotTypes,i) * &
             & generalRho(:numPotTypes,6))
@@ -642,6 +805,7 @@ subroutine makeSCFPot (totalEnergy)
    !   produced by the non-local and reciprocal space operators.  Only the
    !   valence charge is integrated against the potentials produced by the
    !   local operators.
+<<<<<<< HEAD
 
    ! 
 
@@ -730,6 +894,13 @@ subroutine makeSCFPot (totalEnergy)
    !        combines NEUT_V and RES and a CORE on the right. The operator is
    !        local.
    !   
+=======
+   elecStatEnergy = sum(0.5_double  * (generalRho(:,1) + generalRho(:,7)) * &
+         & (elecStatPot(:,1) + elecStatPot(:,6)) + generalRho(:,2) * &
+         & 0.5_double * (elecStatPot(:,2) + elecStatPot(:,3) + &
+         & elecStatPot(:,5)) + 0.5_double * (generalRho(:,2) - &
+         & generalRho(:,5))  * (elecStatPot(:,3) + elecStatPot(:,5)))
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
 
    ! Correct for the difference between the actual and fitted valence charge
@@ -741,6 +912,7 @@ subroutine makeSCFPot (totalEnergy)
    elecStatEnergyDiff = elecStatEnergyDiff - elecStatEnergy
 
 
+<<<<<<< HEAD
    write (20,*) 'Difference between actual and fitted charge:', &
          & elecStatEnergyDiff
    call flush (20)
@@ -768,6 +940,14 @@ subroutine makeSCFPot (totalEnergy)
    !   electrostatic potential. If we then subtract the gaussian screened
    !   nuclear charge (elecStat(:,4)) from the above sum we will obtain the
    !   electrostatic contribution to the potential needed for SCF calculations.
+=======
+   write (20,*) 'Actual and fitted charge-screened nucleus difference',&
+         & elecStatEnergyDiff
+   call flush (20)
+
+
+   ! NOW, do a least squares fit for the potential with the overlap matrix.
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    elecStatPot(:,1) = elecStatPot(:,1) + elecStatPot(:,2) + elecStatPot(:,3) - &
          &            elecStatPot(:,4) + elecStatPot(:,5)
    elecStatPot(:,2) = elecStatPot(:,6)
@@ -779,12 +959,17 @@ subroutine makeSCFPot (totalEnergy)
    enddo
 
    ! Solve with LAPACK dposvx
+<<<<<<< HEAD
    call solveDPOSVX (potDim,2,tempOverlap,potDim,elecStatPot(:,:2),info)
 
    if (info /= 0) then
       write (20, *) 'Electrostatics dposvx failed. INFO= ', info
       stop
    endif
+=======
+   call solveDPOSVX (potDim,2,tempOverlap,potDim,elecStatPot(:,:2))
+
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Begin the exchange-correlation potential fitting
 
@@ -795,6 +980,7 @@ subroutine makeSCFPot (totalEnergy)
    ! Allocate space to hold the exchange-correlation potential, exchange
    !   correlation radial weights, Rho Matrix Operator, and the resultant Rho.
    allocate (exchCorrPot  (potDim,2+spin))
+<<<<<<< HEAD
    ! If running GGA calculation space is allocated for the first and second
    ! derivatives of the exchange rho operator.
    if (GGA == 0) then
@@ -813,13 +999,23 @@ subroutine makeSCFPot (totalEnergy)
    endif
 
    allocate (radialWeight (maxNumRayPoints))
+=======
+   allocate (exchCorrRho  (1+spin,maxNumRayPoints))
+   allocate (radialWeight (maxNumRayPoints))
+   allocate (exchRhoOp    (potDim,maxNumRayPoints))
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
 
    ! Initialize the exchange-correlation potential accumulator
    exchCorrPot(:,:) = 0.0_double
 
+<<<<<<< HEAD
    do i = 1, numPotSites
 !errorCount = 0
+=======
+
+   do i = 1, numPotSites
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
       currentType = potSites(i)%potTypeAssn
 
       ! Cycle to the next potential site if the covalent radius of the
@@ -835,13 +1031,18 @@ subroutine makeSCFPot (totalEnergy)
       if (hdferr /= 0) stop 'Failed to read radial weights'
 
       call h5dread_f (exchRhoOp_did(i),H5T_NATIVE_DOUBLE,&
+<<<<<<< HEAD
             & exchRhoOp(:,:,:),potPoints,hdferr)
+=======
+            & exchRhoOp(:,:),potPoints,hdferr)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
       if (hdferr /= 0) stop 'Failed to read exch rho operator'
 
 
       ! The exchange correlation matrix times the charge vector produces the
       !   the real space charge
       do j = 1, numRayPoints
+<<<<<<< HEAD
          coreSum  = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,3))
          totalSum = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,1))
 
@@ -977,6 +1178,44 @@ subroutine makeSCFPot (totalEnergy)
             endif
          endif
       enddo ! j = 1, numRayPoints
+=======
+         coreSum         = sum(exchRhoOp(:potDim,j) * generalRho(:potDim,3))
+         nonCoreTotalSum = sum(exchRhoOp(:potDim,j) * generalRho(:potDim,1))
+
+         if (spin == 2) then
+            spinDiffSum = sum(exchRhoOp(:potDim,j) * generalRho(:potDim,8))
+            exchCorrRho (3,j) = spinDiffSum  ! Valence spin difference
+         endif
+
+         if (coreSum < 0.0_double) then
+            coreSum = 0.0_double
+         endif
+         if (nonCoreTotalSum < smallThresh) then
+! This is totally ridiculous.  If the following statement is not present, then
+!   the program will not work.  The values for nonCoreTotalSum will not be
+!   calculated correctly.  For the first potential all the values will be less
+!   than smallThresh.  For the later potential sites (i) the values will be
+!   correct.  I can only assume that the error lies in a bad allocation
+!   statement somewhere, or an access outside of some array boundry, but I have
+!   been unable to determine where.  If these write statements are present,
+!   then the program will function correctly even though the statements are
+!   never executed.  This tells me that the compiler is optimizing differently
+!   for the two cases on the HP-UX ia64 machine sirius.  Further, on the Tru64
+!   machine hilbert this works fine without these write statements.  I tried
+!   to compile both cases with the -C flag to check array bounds.  The Tru64
+!   compiler gave no errors, while the HP-UX one wouldn't even get past the
+!   parseInput subroutine that has been used flawlessly for years.  Annoying.
+!write (20,*) "nonCoreTotalSum=",nonCoreTotalSum
+!call flush (20)
+            nonCoreTotalSum = smallThresh
+!write (20,*) "nonCoreTotalSum=",nonCoreTotalSum
+!call flush (20)
+         endif
+
+         exchCorrRho (1,j) = nonCoreTotalSum
+         exchCorrRho (2,j) = coreSum
+      enddo
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
       ! Define the exchange correlation functions
       ! 100 = Wigner
@@ -985,7 +1224,10 @@ subroutine makeSCFPot (totalEnergy)
       ! 150 = Ceperley-Alder
       ! 151 = von Barth-Hedin
       ! 152 = unknown
+<<<<<<< HEAD
       ! 200 = PBE96 (Perdew, Burke, and Enzerhof)
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
       if (xcCode == 100) then
             do j = 1, numRayPoints
@@ -993,39 +1235,66 @@ subroutine makeSCFPot (totalEnergy)
                !   return value of the second array index value was 0.0 on the
                !   ia64 HP-UX machine sirius.  This seems to work.
                call wignerXC(exchCorrRho(1,j),currentExchCorrPot(1:2))
+<<<<<<< HEAD
                call wignerXCEnergy(exchCorrRhoCore(1,j),currentExchCorrPot(3))
                do k = 1,3
                   exchCorrPot(:,k) = exchCorrPot(:,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
                         & exchRhoOp(:potDim,j,1)
+=======
+               call wignerXCEnergy(exchCorrRho(2,j),currentExchCorrPot(3))
+               do k = 1,3
+                  exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
+                        & radialWeight(j) * currentExchCorrPot(k) * &
+                        & exchRhoOp(:potDim,j)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
                enddo
             enddo
       elseif (xcCode == 101) then
             do j = 1, numRayPoints
                call ceperleyAlderXC(exchCorrRho(1,j),currentExchCorrPot(1:2))
+<<<<<<< HEAD
                call ceperleyAlderXCEnergy(exchCorrRhoCore(1,j),&
                      & currentExchCorrPot(3))
                do k = 1,3
                   exchCorrPot(:,k) = exchCorrPot(:,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
                         & exchRhoOp(:potDim,j,1)
+=======
+               call ceperleyAlderXCEnergy(exchCorrRho(2,j),&
+                     & currentExchCorrPot(3))
+               do k = 1,3
+                  exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
+                        & radialWeight(j) * currentExchCorrPot(k) * &
+                        & exchRhoOp(:potDim,j)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
                enddo
             enddo
       elseif (xcCode == 102) then
             do j = 1, numRayPoints
                call hedinLundqvistXC(exchCorrRho(1,j),&
                      & currentExchCorrPot(1:2))
+<<<<<<< HEAD
                call hedinLundqvistXCEnergy(exchCorrRhoCore(1,j),&
                      & currentExchCorrPot(3))
                do k = 1,3
                   exchCorrPot(:,k) = exchCorrPot(:,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
                         & exchRhoOp(:potDim,j,1)
+=======
+               call hedinLundqvistXCEnergy(exchCorrRho(2,j),&
+                     & currentExchCorrPot(3))
+               do k = 1,3
+                  exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
+                        & radialWeight(j) * currentExchCorrPot(k) * &
+                        & exchRhoOp(:potDim,j)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
                enddo
             enddo
       elseif (xcCode == 150) then
             ! Ceperley and Alder Exchange-Correlation (LSDA)
             do j = 1, numRayPoints
+<<<<<<< HEAD
                call ceperleyAlderSP(exchCorrRho(1,j),exchCorrRhoSpin(1,j),&
                      & exchCorrRhoCore(1,j),currentExchCorrPot(:))
 !write (20,*) "i,j,pts",i,j,numRayPoints
@@ -1045,22 +1314,42 @@ subroutine makeSCFPot (totalEnergy)
 !write (20,*) exchCorrPot(:,3)
 !write (20,*) "exchCorrPot(:,4) i=",i
 !write (20,*) exchCorrPot(:,4)
+=======
+               call ceperleyAlderSP(exchCorrRho(1,j),exchCorrRho(3,j),&
+                     & exchCorrRho(2,j),currentExchCorrPot(1:4))
+               do k = 1,4
+                  exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
+                        & radialWeight(j) * currentExchCorrPot(k) * &
+                        & exchRhoOp(:potDim,j)
+               enddo
+            enddo
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
       elseif (xcCode == 151) then
             ! von Barth and Hedin Exchange-Correlation (LSDA)
             do j = 1, numRayPoints
+<<<<<<< HEAD
                call vonBarthHedin(exchCorrRho(1,j),exchCorrRhoSpin(1,j),&
                      & exchCorrRhoCore(1,j),currentExchCorrPot(:))
                do k = 1,4
                   exchCorrPot(:,k) = exchCorrPot(:,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
                         & exchRhoOp(:potDim,j,1)
+=======
+               call vonBarthHedin(exchCorrRho(1,j),exchCorrRho(3,j),&
+                     & exchCorrRho(2,j),currentExchCorrPot(1:4))
+               do k = 1,4
+                  exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
+                        & radialWeight(j) * currentExchCorrPot(k) * &
+                        & exchRhoOp(:potDim,j)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
                enddo
             enddo
       elseif (xcCode == 152) then
             ! Old SPmain.for Exchange Correlation (LSDA) (Should be like the
             !   von barth and Hedin above.)
             do j = 1, numRayPoints
+<<<<<<< HEAD
                call oldEXCORR(exchCorrRho(1,j),exchCorrRhoSpin(1,j),&
                      & exchCorrRhoCore(1,j),currentExchCorrPot(:))
                do k = 1,4
@@ -1127,6 +1416,18 @@ subroutine makeSCFPot (totalEnergy)
 !write (20,*) "i,error count=",i,errorCount
 !call flush (20)
    enddo ! i = 1, numPotSites
+=======
+               call oldEXCORR(exchCorrRho(1,j),exchCorrRho(3,j),&
+                     & exchCorrRho(2,j),currentExchCorrPot(1:4))
+               do k = 1,4
+                  exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
+                        & radialWeight(j) * currentExchCorrPot(k) * &
+                        & exchRhoOp(:potDim,j)
+               enddo
+            enddo
+      endif
+   enddo
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Allocate space to hold the exchCorrOverlap
    allocate (exchCorrOverlap(potDim,potDim))
@@ -1139,12 +1440,17 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Solve the linear set of equations with LAPACK
    call solveDPOSVX (potDim,2+spin,exchCorrOverlap,potDim,&
+<<<<<<< HEAD
          & exchCorrPot(:,:2+spin),info)
 
    if (info /= 0) then
       write (20, *) 'Exchange-correlation dposvx failed. INFO= ', info
       stop
    endif
+=======
+         & exchCorrPot(:,:2+spin))
+
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Calculate the total exchange correlation energy minus the core exchange
    !   correlation energy to get the valence exchange correlation energy.
@@ -1155,6 +1461,7 @@ subroutine makeSCFPot (totalEnergy)
          & sum(potAlphaOverlap(:,i)*exchCorrPot(:,2+spin)) * generalRho(i,3)
    enddo
 
+<<<<<<< HEAD
    ! Compute the spin dependent exchange correlation energy. Note that because
    !   generalRho(:,8) holds a charge spin difference the contribution from the
    !   core is identically zero. Therefore, nothing needs to be subtracted off.
@@ -1197,10 +1504,19 @@ subroutine makeSCFPot (totalEnergy)
       write (20,*) "Your structure might have a serious problem. Aborting."
       stop
    endif
+=======
+
+
+   kineticEnergy = kineticEnergyTrace(1) ! UP + DOWN or TOTAL
+
+   ! Calculate the total energy
+   totalEnergy = kineticEnergy + elecStatEnergy + exchCorrEnergy
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
 
    ! Deallocate exchange correlation arrays now that the total energy is known.
    deallocate (exchCorrRho)
+<<<<<<< HEAD
    deallocate (exchCorrRhoCore)
    deallocate (exchCorrRhoSpin)
    deallocate (exchCorrOverlap)
@@ -1312,12 +1628,53 @@ endif
 !      !   convergence more smooth.)
 !      outputPot(:,i) = yl0(:,i) - xl0(:,i)
 !   enddo
+=======
+   deallocate (exchCorrOverlap)
+
+   ! Allocate space to hold the output potentials
+   allocate (outputPot (potDim,spin))
+   if (.not.allocated(xl0)) then
+      allocate (xl0 (potDim,spin))
+      allocate (xl1 (potDim,spin))
+      allocate (xl2 (potDim,spin))
+      allocate (yl0 (potDim,spin))
+      allocate (yl1 (potDim,spin))
+      allocate (yl2 (potDim,spin))
+
+      do i = 1, spin
+         xl1(:,i) = potCoeffs(:,i)
+         xl2(:,i) = potCoeffs(:,i)
+         yl1(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
+         yl2(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
+      enddo
+   endif
+
+
+   do i = 1, spin
+      xl0(:,i) = potCoeffs(:,i)
+      yl0(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
+
+      ! Form the difference between last iteration and the current new
+      !   calculation of the potential.  (Note that this calculation will be
+      !   mixed later with the potential of last iteration to make the
+      !   convergence more smooth.)
+      outputPot(:,i) = yl0(:,i) - xl0(:,i)
+
+   enddo
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
 
    ! Deallocate matrices that have been copied to temporary arrays.
    deallocate (elecStatPot)
    deallocate (exchCorrPot)
 
+<<<<<<< HEAD
+=======
+   if ((currIteration == 1) .or. (currIteration == lastIteration)) then
+      write (20,*) 'OUTPUT INTERESTING STUFF HERE'
+   endif
+
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Begin real-space self consistancy analysis
 
@@ -1346,7 +1703,11 @@ endif
 
       siteIndex = siteIndex + 1
 
+<<<<<<< HEAD
       ! Read the mesh information for the current potential site.
+=======
+      ! Read the mesh information.
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
       call h5dread_f (numPoints_did(i),H5T_NATIVE_INTEGER,&
             & numRayPoints,numPoints,hdferr)
       if (hdferr /= 0) stop 'Failed to read num ray points #2'
@@ -1354,7 +1715,11 @@ endif
             & radialWeight(:),points,hdferr)
       if (hdferr /= 0) stop 'Failed to read radial weights #2'
       call h5dread_f (exchRhoOp_did(i),H5T_NATIVE_DOUBLE,&
+<<<<<<< HEAD
             & exchRhoOp(:,:,:),potPoints,hdferr)
+=======
+            & exchRhoOp(:,:),potPoints,hdferr)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
       if (hdferr /= 0) stop 'Failed to read exch rho operator #2'
 
 
@@ -1362,8 +1727,12 @@ endif
       !   potential vector difference to get the difference in real space.
       do j = 1, spin
          do k = 1, numRayPoints
+<<<<<<< HEAD
 !            realSpacePotDiff(k,j) = sum(exchRhoOp(:,k,1) * outputPot(:,j))
             realSpacePotDiff(k,j) = sum(exchRhoOp(:,k,1) * potDifference(:,j))
+=======
+            realSpacePotDiff(k,j) = sum(exchRhoOp(:,k) * outputPot(:,j))
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
          enddo
 
          ! Determine the delta to be tested.
@@ -1372,20 +1741,30 @@ endif
          weightedPotDiff         = sum (radialWeight(:numRayPoints) * &
                & realSpacePotDiff(:numRayPoints,j)**2)
          averageDelta(siteIndex) = sqrt(weightedPotDiff / radialWeightSum)
+<<<<<<< HEAD
 !write (20,*) "averageDelta,i,j",averageDelta(siteIndex),i,j
 !write (20,*) "maxDelta",maxDelta(siteIndex)
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
          testableDelta           = max (averageDelta(siteIndex),testableDelta)
       enddo
    enddo
 
    ! Deallocate arrays to obtain the testableDelta
+<<<<<<< HEAD
    deallocate (potDifference)
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    deallocate (realSpacePotDiff)
    deallocate (averageDelta)
    deallocate (maxDelta)
    deallocate (exchRhoOp)
    deallocate (radialWeight)
+<<<<<<< HEAD
 !   deallocate (outputPot)
+=======
+   deallocate (outputPot)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Generate the potentials for the next iteration using the method D.G.
    !   Anderson, J. Assoc. Comp. Mach. 12, 547 (1965).
@@ -1396,6 +1775,7 @@ endif
    !   small, the first order M=1 extrapolation is used instead.  M is
    !   effectively reduced to 0 or 1 if the iteration is 0, 1, or 2.
 
+<<<<<<< HEAD
 !   allocate ( rl0 (potDim))
 !   allocate ( rl1 (potDim))
 !   allocate ( rl2 (potDim))
@@ -1584,6 +1964,78 @@ endif
 !      yl2(:,i) = yl1(:,i)
 !      yl1(:,i) = yl0(:,i)
 !   enddo
+=======
+   allocate ( rl0 (potDim))
+   allocate ( rl1 (potDim))
+   allocate ( rl2 (potDim))
+   allocate (drl1 (potDim))
+   allocate (drl2 (potDim))
+
+   ! This is basically copied from the old code with little modification for
+   !   the names since I don't know what they mean or do in most cases.
+   do i = 1, spin
+      th1 = 0.0_double
+      th2 = 0.0_double
+      if (feedbackLevel /= 0) then
+         if (currIteration > 1) then
+            rl0(:)  = yl0(:,i) - xl0(:,i)
+            rl1(:)  = yl1(:,i) - xl1(:,i)
+            rl2(:)  = yl2(:,i) - xl2(:,i)
+            drl1(:) = rl0(:) - rl1(:)
+            drl2(:) = rl0(:) - rl2(:)
+
+            ! This part is new.  Make temp matrices holding the potAlphaOverlap
+            !   times the drl1, and drl2 vectors.
+
+            ! Initialize the summation variables
+            s11 = 0.0_double
+            s12 = 0.0_double
+            s22 = 0.0_double
+            t1  = 0.0_double
+            t2  = 0.0_double
+
+            ! The cases for the drl1 vector are done first. 
+            do j = 1, potDim
+               tempOverlap(:,j) = potAlphaOverlap(:,j) * drl1(j)
+               s11 = s11 + sum(tempOverlap(:,j) * drl1(:))
+               t1  = t1  + sum(tempOverlap(:,j) * rl0(:))
+            enddo
+
+            ! The cases for the drl2 vector are done second.
+            do j = 1, potDim
+               tempOverlap(:,j) = potAlphaOverlap(:,j) * drl2(j)
+               s12 = s12 + sum(tempOverlap(:,j) * drl1(:))
+               s22 = s22 + sum(tempOverlap(:,j) * drl2(:))
+               t2  = t2  + sum(tempOverlap(:,j) * rl0(:))
+            enddo
+            th1 = t1/s11
+            if (feedbackLevel /= 1) then
+               if (currIteration > 2) then
+
+                  ! Calculate the determinate.
+                  det = s11*s22 - s12*s12
+                  if (det/(s11*s22) >= 0.01_double) then
+                     th1 = ( s22*t1 - s12*t2)/det
+                     th2 = (-s12*t1 + s11*t2)/det
+                  endif
+               endif
+            endif
+         endif
+      endif
+
+      ! Form the next iteration and save the previous two.
+      potCoeffs(:,i) = &
+            & (1.0_double - relaxFactor) * &
+            & ((1.0_double-th1-th2)*xl0(:,i) + th1*xl1(:,i) + th2*xl2(:,i)) + &
+            & relaxFactor * &
+            & ((1.0_double-th1-th2)*yl0(:,i) + th1*yl1(:,i) + th2*yl2(:,i))
+
+      xl2(:,i) = xl1(:,i)
+      xl1(:,i) = xl0(:,i)
+      yl2(:,i) = yl1(:,i)
+      yl1(:,i) = yl0(:,i)
+   enddo
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
 
    ! Record the potential terms (alphas), potential coefficients, total charge
@@ -1594,6 +2046,7 @@ endif
    ! Write the file header that says the total number of types.
    write (8,fmt="(a9,i5)") "NUM_TYPES",numPotTypes
 
+<<<<<<< HEAD
    ! Normally, one would expect this type of loop to go from 1 to spin.
    !   However, in this case we need to go from 1 to 2. For the spin==2 case,
    !   the reason is obvious: we need to write the spin up and spin down
@@ -1606,14 +2059,23 @@ endif
    !   by a spin non-polarized calculation at all. They are just cruft that is
    !   kept around to maintain file format consistency.
    do i = 1, 2
+=======
+   do i = 1, spin
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
       ! Initialize the counter for the number of terms.
       potTermCount = 0
 
       if (i == 1) then
+<<<<<<< HEAD
          write (8,fmt="(a18)") "TOTAL__OR__SPIN_UP"
       else
          write (8,fmt="(a7)") "SPIN_DN"
+=======
+         write (8,fmt="(a20)") "TOTAL OR SPIN_UP"
+      else
+         write (8,fmt="(a20)") "SPIN_DN"
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
       endif
 
       do j = 1, numPotTypes
@@ -1626,6 +2088,7 @@ endif
             ! Increment the counter.
             potTermCount = potTermCount + 1
 
+<<<<<<< HEAD
             ! Write the term. Note that the spin==1 case always writes a
             !   potCoeffs term from index 1 while the spin==2 case can write a
             !   potCoeffs term from index i==1 or i==2.
@@ -1636,6 +2099,16 @@ endif
                      & 0.0_double
             else
                write (8,fmt="(2(1x,e17.10),3(1x,e13.6))") &
+=======
+            ! Write the term.
+            if (spin == 1) then
+               write (8,fmt="(2(1x,e16.10),3(1x,e12.6))") &
+                     & potCoeffs(potTermCount,i),potAlphas(potTermCount),&
+                     & generalRho(potTermCount,1),generalRho(potTermCount,2),&
+                     & 0.0_double
+            else
+               write (8,fmt="(2(1x,e16.10),3(1x,e12.6))") &
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
                      & potCoeffs(potTermCount,i),potAlphas(potTermCount),&
                      & generalRho(potTermCount,1),generalRho(potTermCount,2),&
                      & generalRho(potTermCount,8)
@@ -1645,6 +2118,7 @@ endif
    enddo
    call flush (8)
 
+<<<<<<< HEAD
    ! Record the potential information for any plusUJ terms.
    write (8,fmt="(a18)") "NUM__PLUSUJ__TERMS"
    write (8,fmt="(i5)") numPlusUJAtoms
@@ -1677,6 +2151,8 @@ endif
       enddo
    enddo
    call flush (8)
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Compute the total magnetic moment of the system and of individual
    !   potential types.  (Only done for spin polarized calculations.)
@@ -1697,9 +2173,14 @@ endif
          potTypeInitIndex = currentCumulAlphaSum + 1
          potTypeFinIndex  = currentCumulAlphaSum + currentNumAlphas
 
+<<<<<<< HEAD
          typesMagneticMoment(i) = &
                & sum(generalRho(potTypeInitIndex:potTypeFinIndex,8) &
                & * intgConsts(potTypeInitIndex:potTypeFinIndex))
+=======
+         typesMagneticMoment(i) = sum(&
+               & generalRho(potTypeInitIndex:potTypeFinIndex,8))
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
          totalMagneticMoment = totalMagneticMoment + typesMagneticMoment(i) * &
                & potTypes(i)%multiplicity
@@ -1734,7 +2215,11 @@ endif
    write (20,*) 'EXCH-CORR ENERGY:      ',exchCorrEnergy
    write (20,*) 'TOTAL ENERGY:          ',totalEnergy
 
+<<<<<<< HEAD
    write (14,fmt="(i5,4e18.10)") currIteration, kineticEnergy, elecStatEnergy, &
+=======
+   write (14,*) currIteration, kineticEnergy, elecStatEnergy, &
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
          & exchCorrEnergy, totalEnergy
 
 
@@ -1751,22 +2236,34 @@ endif
    ! Deallocate arrays and matrices that are not needed now.
    deallocate (typesMagneticMoment)
    deallocate (generalRho)
+<<<<<<< HEAD
    deallocate (chargeDensityTrace)
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    deallocate (nucPotTrace)
    deallocate (kineticEnergyTrace)
    deallocate (tempOverlap)
    deallocate (potAlphaOverlap)
+<<<<<<< HEAD
 !   deallocate (rl0)
 !   deallocate (rl1)
 !   deallocate (rl2)
 !   deallocate (drl1)
 !   deallocate (drl2)
+=======
+   deallocate (rl0)
+   deallocate (rl1)
+   deallocate (rl2)
+   deallocate (drl1)
+   deallocate (drl2)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Log the date and time we end.
    call timeStampEnd (18)
 
 end subroutine makeSCFPot
 
+<<<<<<< HEAD
 ! Use the method of D. G. Anderson (J. Assoc. Comp. Mach. 12, 547 (1965)) to
 !   compute the potential coefficients for the next SCF iteration. The problem
 !   is that we have a non-linear optimization problem but that we have a
@@ -2733,6 +3230,8 @@ subroutine blendJointPotentials(firstTerm, numJointTerms, outCoeffs,&
 end subroutine blendJointPotentials
 
 
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
 subroutine wignerXC (rho,answer)
 
@@ -2795,8 +3294,11 @@ subroutine wignerXCEnergy (rho,answer)
 
 end subroutine wignerXCEnergy
 
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 subroutine ceperleyAlderXC (rho,answer)
 
    ! Include kind definitions
@@ -3071,6 +3573,7 @@ subroutine vonBarthHedin (totalRho,spinDiffRho,coreRho,answer)
    answer(:) = 0.0_double
 
    ! Initialize some variables
+<<<<<<< HEAD
    alpha = (4.0_double/(9.0_double*pi))**0.33333333_double
    rs = (3.0_double/(4.0_double*pi*totalRho))**0.33333333_double
    a = 2.0_double**(-1.0_double/3.0_double)
@@ -3081,6 +3584,18 @@ subroutine vonBarthHedin (totalRho,spinDiffRho,coreRho,answer)
    rF = 2.0_double**(4.0_double/3.0_double)*rP
    cP = 0.045_double
    cF = cP/2.0_double
+=======
+   alpha = (4.0_double/(9.0_double*pi))**0.33333333
+   rs = (3.0_double/(4.0_double*pi*totalRho))**0.33333333
+   a = 2.0_double**(-1.0_double/3.0_double)
+   gamma = 4.0_double/3.0_double * a / (1.0_double - a)
+   two13 = 2.0**(0.3333333333)
+
+   rP = 21.0
+   rF = 2.0**(4.0/3.0)*rP
+   cP = 0.045
+   cF = cP/2.0
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Abort if the incoming total charge is sufficiently large, then compute the
    !   exchange correlation for it.
@@ -3111,11 +3626,19 @@ subroutine vonBarthHedin (totalRho,spinDiffRho,coreRho,answer)
          x = 1.0_double
       endif
 
+<<<<<<< HEAD
       epsxP = -3.0_double/(2.0_double * pi * alpha) / rs
 
       epsxF = two13 * epsxP
 
       muxP = 4.0_double/3.0_double * epsxP
+=======
+      epsxP = -3.0/(2.0 * pi * alpha) / rs
+
+      epsxF = two13 * epsxP
+
+      muxP = 4.0/3.0 * epsxP
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
 !      muxF = two13 * muxP
 
@@ -3342,8 +3865,13 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
    implicit none
 
    ! Define dummy variables passed to this function and the return value.
+<<<<<<< HEAD
    real (kind=double), intent(in) :: totalRho,spinDiffRho,coreRho
    real (kind=double), intent(out), dimension (4) :: answer
+=======
+   real (kind=double) :: totalRho,spinDiffRho,coreRho
+   real (kind=double), dimension (4) :: answer
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
    ! Define local varibles
    real (kind=double) :: zeta
@@ -3386,6 +3914,7 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
    real (kind=double) :: muxDn
 
    answer(:) = 0.0_double
+<<<<<<< HEAD
    fourThirds = 4.0_double/3.0_double
    twoThirds  = 2.0_double/3.0_double
    oneThird   = 1.0_double/3.0_double
@@ -3414,6 +3943,35 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
          ! answer(3) = ex + ec.
          ecP = g / (1.0_double + B1P*sqrtrs + B2P*rs)
          ecF = g / (1.0_double + B1F*sqrtrs + B2F*rs)
+=======
+   fourThirds = 4.0/3.0
+   twoThirds  = 2.0/3.0
+   oneThird   = 1.0/3.0
+
+
+   if (totalRho > smallThresh) then
+
+      alpha = (4.0_double/(9.0_double*pi))**0.33333333
+      rs = (3.0_double/(4.0_double*pi*totalRho))**0.33333333
+      zeta = spinDiffRho/totalRho
+      ex0 = 3.0_double/(2.0_double * pi * alpha)
+
+      if (rs >= 1.0) then
+         g   = -0.1423
+         B1P =  1.0529
+         B1F =  1.3981
+         B2P =  0.3334
+         B2F =  0.2611
+         sqrtrs = sqrt(rs)
+         fofzeta = ((1.0+zeta)**fourThirds + (1.0-zeta)**fourThirds - 2.0) / &
+               & (2.0**fourThirds - 2.0)
+         dfofzeta = (fourThirds * (1.0+zeta)**oneThird - &
+                  &  fourThirds * (1.0-zeta)**oneThird)/ &
+                  &  (2.0**fourThirds - 2.0)
+         ! answer(3) = ex + ec.
+         ecP = g / (1 + B1P*sqrtrs + B2P*rs)
+         ecF = g / (1 + B1F*sqrtrs + B2F*rs)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
          ec  = ecP + fofzeta*(ecF-ecP)
          exPara = -ex0/rs
          exF = exPara * 2.0_double**oneThird
@@ -3421,6 +3979,7 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
          answer(3) = ex + ec
 
          ! answer(1,2) = ux + uc
+<<<<<<< HEAD
          mucP = ecP * ecP / g * (1.0_double + 7.0_double/6.0_double*B1P*sqrtrs &
                & + 4.0_double/3.0_double*B2P*rs)
          mucF = ecF * ecF / g * (1.0_double + 7.0_double/6.0_double*B1F*sqrtrs &
@@ -3454,6 +4013,34 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
          dfofzeta = (fourThirds * (1.0_double+zeta)**oneThird - &
                   &  fourThirds * (1.0_double-zeta)**oneThird)/ &
                   &  (2.0_double**fourThirds - 2.0_double)
+=======
+         mucP = ecP * ecP / g * (1 + 7.0/6.0*B1P*sqrtrs + 4.0/3.0*B2P*rs)
+         mucF = ecF * ecF / g * (1 + 7.0/6.0*B1F*sqrtrs + 4.0/3.0*B2F*rs)
+         muxP  = fourThirds * exPara 
+         muxF  = fourThirds * exF
+         mucUp = mucP + fofzeta*(mucF-mucP) + (ecF-ecP)   *( 1.0-zeta)*dfofzeta
+         mucDn = mucP + fofzeta*(mucF-mucP) + (ecF-ecP)   *(-1.0-zeta)*dfofzeta
+         muxUp = muxP + fofzeta*(muxF-muxP) + (exF-exPara)*( 1.0-zeta)*dfofzeta
+         muxDn = muxP + fofzeta*(muxF-muxP) + (exF-exPara)*(-1.0-zeta)*dfofzeta
+         answer(1) = (muxUp + mucUp)
+         answer(2) = (muxDn + mucDn)
+      else
+         AP =  0.03110
+         AF =  0.01555
+         BP = -0.04800
+         BF = -0.02690
+         CP =  0.00200
+         CF =  0.00070
+         DP = -0.01160
+         DF = -0.00480
+
+         lnrs = log(rs) ! log is the natural log (ln) in fortran.
+         fofzeta = ((1.0+zeta)**fourThirds + (1.0-zeta)**fourThirds - 2.0) / &
+               & (2.0**fourThirds - 2.0)
+         dfofzeta = (fourThirds * (1.0+zeta)**oneThird - &
+                  &  fourThirds * (1.0-zeta)**oneThird)/ &
+                  &  (2.0**fourThirds - 2.0)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
          ! answer(3) = ex + ec.
          ecP = AP*lnrs + BP + CP*rs*lnrs + DP*rs
@@ -3466,9 +4053,15 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
 
          ! answer(1,2) = ux + uc
          mucP  = AP*lnrs + (BP - oneThird*AP) + twoThirds*CP*rs*lnrs + &
+<<<<<<< HEAD
                & oneThird*(2.0_double*DP - CP)*rs
          mucF  = AF*lnrs + (BF - oneThird*AF) + twoThirds*CF*rs*lnrs + &
                & oneThird*(2.0_double*DF - CF)*rs
+=======
+               & oneThird*(2.0*DP - CP)*rs
+         mucF  = AF*lnrs + (BF - oneThird*AF) + twoThirds*CF*rs*lnrs + &
+               & oneThird*(2.0*DF - CF)*rs
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
          muxP  = fourThirds * exPara 
          muxF  = fourThirds * exF
          mucUp = mucP + fofzeta*(mucF-mucP) + (ecF-ecP)   *( 1.0-zeta)*dfofzeta
@@ -3478,6 +4071,7 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
          answer(1) = (muxUp + mucUp)
          answer(2) = (muxDn + mucDn)
       endif
+<<<<<<< HEAD
       answer(1) = 0.5_double * answer(1)
       answer(2) = 0.5_double * answer(2)
       answer(3) = 0.5_double * answer(3)
@@ -3494,15 +4088,35 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
          g   = -0.1423_double
          B1P =  1.0529_double
          B2P =  0.3334_double
+=======
+      answer(1) = 0.5 * answer(1)
+      answer(2) = 0.5 * answer(2)
+      answer(3) = 0.5 * answer(3)
+   endif
+
+   ! Consider the core charge where zeta = 0 so f(zeta) = 0.
+   if (coreRho > smallThresh) then
+      rs = (3.0_double/(4.0_double*pi*coreRho))**0.33333333
+      sqrtrs = sqrt(rs)
+
+      if (rs >= 1.0) then
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
          ! answer(4) = ex + ec (core charge) (zeta = 0)
          ec = g / (1 + B1P*sqrtrs + B2P*rs)
          answer(4) = (-ex0 / rs + ec)
       else
+<<<<<<< HEAD
          AP =  0.03110_double
          BP = -0.04800_double
          CP =  0.00200_double
          DP = -0.01160_double
+=======
+         AP =  0.03110
+         BP = -0.04800
+         CP =  0.00200
+         DP = -0.01160
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
          lnrs = log(rs)
 
          ! answer(4) = ex + ec (core charge) (zeta = 0)
@@ -3510,7 +4124,11 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
          answer(4) = (-ex0 / rs + ec)
       endif
 
+<<<<<<< HEAD
       answer(4) = 0.5_double * answer(4)
+=======
+      answer(4) = 0.5 * answer(4)
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
    endif
 end subroutine ceperleyAlderSP
 
@@ -3525,8 +4143,13 @@ subroutine oldEXCORR(rh,sold,rhc,answer)
 
    ! Define dummy variables passed to this function and the return value.
    ! rh=+ totalRho, sold = spinDiffRho,rhc = coreRho
+<<<<<<< HEAD
    real (kind=double), intent(in) :: rh,sold,rhc
    real (kind=double), intent(out), dimension (4) :: answer
+=======
+   real (kind=double) :: rh,sold,rhc
+   real (kind=double), dimension (4) :: answer
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 
 ! rh = total rho (up + down)
 ! sold = rho difference (up - down)
@@ -3629,6 +4252,7 @@ subroutine oldEXCORR(rh,sold,rhc,answer)
    answer(4) = excrc
 
 end subroutine oldEXCORR
+<<<<<<< HEAD
 
 subroutine pbe96(rho,rhox,rhoy,rhoz,rhoxx,rhoxy,rhoxz,rhoyy,rhoyz,rhozz,answer)
    use O_Kinds
@@ -3843,6 +4467,8 @@ subroutine GCOR2(A,A1,B1,B2,B3,B4,RTRS,GG,GGRS)
    
 end subroutine GCOR2
 
+=======
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 !
 !*************************************************************
 !
@@ -3882,6 +4508,7 @@ subroutine cleanUpPotentialUpdate
 
    implicit none
 
+<<<<<<< HEAD
    if (allocated (usedPotCoeffs)) then
       deallocate (usedPotCoeffs)
       deallocate (guessedPotCoeffs)
@@ -3899,6 +4526,17 @@ subroutine cleanUpPotentialUpdate
 !      deallocate (yl2)
 !   endif
 
+=======
+   if (allocated (xl0)) then
+      deallocate (xl0)
+      deallocate (xl1)
+      deallocate (xl2)
+      deallocate (yl0)
+      deallocate (yl1)
+      deallocate (yl2)
+   endif
+
+>>>>>>> 13e6d8079a5dfb0d48e12c8e18e24ee52c7aef1e
 end subroutine cleanUpPotentialUpdate
 
 

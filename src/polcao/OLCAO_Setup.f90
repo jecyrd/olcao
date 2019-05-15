@@ -34,6 +34,8 @@ subroutine setupSCF
    use O_Parallel
    use O_ParallelSetup
 
+   use O_pOLCAOhdf5,  only: accessAtomPairsHDF5
+
    ! Import the HDF5 module.
    use HDF5
 

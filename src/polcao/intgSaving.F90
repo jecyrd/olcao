@@ -256,7 +256,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
 
    ! Deallocate the dagger of the current pair since it is no longer needed.
    deallocate (currentPairDagger)
-
+   
 end subroutine saveCurrentPair
 
 

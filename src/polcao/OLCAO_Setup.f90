@@ -197,10 +197,6 @@ subroutine setupSCF
    ! Deallocate the CVoL matrix
    call deallocLocalArray(cvOLArrayInfo)
 
-   ! Close the HDF5 interface.
-   call h5close_f (hdferr)
-   if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
-
    ! Deallocate all the other as of yet un-deallocated arrays.
    call cleanUpAtomTypes()
    call cleanUpAtomSites()
@@ -216,6 +212,12 @@ subroutine setupSCF
 
    ! Close the output file
    close (20)
+
+   ! Close the HDF5 interface.
+   if (mpiRank == 0) then
+      call h5close_f (hdferr)
+      if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
+   endif
 
    ! Open a file to signal completion of the program.
    if (mpiRank == 0) then

@@ -1715,7 +1715,7 @@ subroutine gaussOverlapEP(blcsInfo,cvOLArrayInfo, atomList, &
 end subroutine gaussOverlapEP
 
 
-subroutine elecPotGaussOverlap
+subroutine elecPotGaussOverlap(blcsinfo,cvOLArrayInfo,atomList)
 
    ! Import the necessary modules
    use O_Kinds
@@ -1725,9 +1725,29 @@ subroutine elecPotGaussOverlap
    use O_AtomicSites, only: numAtomSites
    use O_PotTypes, only: potTypes
    use O_PotSites, only: potSites, numPotSites
+   use O_Potential, only: potDim
+
+   ! Import necessary parallel modules
+   use MPI
+   use O_Parallel
+   use O_ParallelSetup
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+
+   ! Define the passed parameters
+   type(BlacsInfo) :: blcsinfo
+   type(ArrayInfo) :: cvOLArrayInfo
+   type(AtomPair), pointer :: atomList
+
+   ! Define local variables.
+   integer :: numAlphas
+   integer :: currPotNumber
+   integer :: currPotElement
+   integer :: currAlphaNumber
+   integer :: currMultiplicity
+   integer :: currPotTypeNumber
+   real (kind=double) :: currPotAlpha
 
    ! Define local variables that are extracted from the passed data structures
    integer :: numAlphas
@@ -1792,7 +1812,9 @@ subroutine elecPotGaussOverlap
 
          ! Calculate the overlap for the current alpha of the current type
          !   with all the alphas of every pair of atoms.
-         call gaussOverlapEP
+         call gaussOverlapEP(blcsinfo,cvOLArrayInfo,atomList,potDim, &
+               & currAlphaNumber,currPotElement,currPotNumber, &
+               & currMultiplicity,currPotAlpha,currPotTypeNumber)
 
          ! Record that this loop has finished
          if (mod(currentIterCount,10) .eq. 0) then
@@ -1809,7 +1831,6 @@ subroutine elecPotGaussOverlap
 
    ! Deallocate matrices that are no longer used.
    deallocate (anyElecPotInteraction)
-
 
    ! Make a finishing time stamp.
    call timeStampEnd (11)

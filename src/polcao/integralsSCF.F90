@@ -2372,7 +2372,8 @@ subroutine orthoOL(vvInfo,ccInfo,cvOLInfo,blcsinfo,potDim)
 end subroutine orthoOL
 
 
-subroutine ortho (opCode)
+subroutine ortho (opCode,vvInfo,ccInfo,cvInfo,cvOLInfo,blcsInfo,potDim, &
+      & currPotTypeNumber,currAlphaNumber)
 
    ! Use necessary modules.
    use O_Kinds
@@ -2383,143 +2384,164 @@ subroutine ortho (opCode)
          & atomPotOverlap_did, atomDims
    use O_Orthogonalization
 
+   ! Import parallel modules
+   use MPI
+   use O_Parallel
+   use O_ParallelSetup
+
    ! Make sure that no funny variables are defined.
    implicit none
 
    ! Define passed dummy arguments.
-   integer :: opCode
+   integer, intent(in) :: opCode
+   type(ArrayInfo), intent(inout) :: vvInfo, ccInfo, cvInfo, cvOLInfo
+   type(BlacsInfo), intent(in) :: blcsinfo
+   integer, intent(in) :: potDim
+   integer, intent(in) :: currPotTypeNumber
+   integer, intent(in) :: currAlphaNumber 
 
    ! Define local variables.
    integer :: i,j,k
    integer :: hdferr
    integer :: currIndex
-   real (kind=double), allocatable, dimension (:,:) :: packedValeVale
+   integer, dimension(MPI_STATUS_SIZE) :: mpistatus
+   type(ArrayInfo) :: vcTempInfo
+   type(ArrayInfo) :: vcInfo
+   type(ArrayInfo) :: tArrInfo
+   type(ArrayInfo) :: tBlcsInfo 
+   integer :: dcount, mpidtype, mpierr
+   integer, dimension(7) :: sdata
 
-   ! Orthogonalizing against the overlap matrix is unnecessary when the core
-   !   dimension is zero.  However, we must still allocate some matrices for
-   !   use later.
-   if (coreDim /= 0) then
-#ifndef GAMMA
-      do i = 1, numKPoints
-        ! Form product of (valeCoreOL)(coreVale) and (valeCore)(coreValeOL).
-        !   Subtract both from the kinetic energy (valeVale).
-        call valeCoreCoreVale (valeDim,coreDim,valeVale(:,:,i,1),&
-              & coreVale(:,:,i),coreValeOL(:,:,i))
-      enddo
-#else
-      do i = 1, numKPoints
-        ! Form a product of (valeCoreOL)(coreVale) and (valeCoreKE)
-        !   (coreValeOL).  Subtract both from the kinetic energy (valeVale2).
-        call valeCoreCoreValeGamma (valeDim,coreDim,valeValeGamma(:,:,1),&
-              & coreValeGamma,coreValeOLGamma)
-      enddo
-#endif
-   endif
+   ! Setup the local array info for the valeCore matrix formed by the
+   !    conjugate transpose of cvOL
+   call setupArrayDesc(vcInfo,blcsinfo,valeDim,coreDim,numKPoints)
+   call pctranse(cvOLInfo,vcInfo)
 
-   ! Allocate space to finish orthogonalization and pack the valeVale matrix.
-#ifndef GAMMA
-   deallocate (coreVale)
-   allocate (valeCore(coreDim,valeDim)) ! Pre-transposed format.
-   allocate (packedValeVale(2,valeDim*(valeDim+1)/2))
-#else
-   deallocate (coreValeGamma)
-   allocate (valeCoreGamma(coreDim,valeDim)) ! Pre-transposed format.
-   allocate (packedValeVale(1,valeDim*(valeDim+1)/2))
-#endif
+   ! Setup the local array info for the temporary valeCore matrix used in these
+   !    subroutines.
+   call setupArrayDesc(vcTempInfo,blcsinfo,valeDim,coreDim,numKPoints)
 
    do i = 1, numKPoints
 
-      ! Orthogonalization is only necessary if the core dimension is non-zero.
+      ! It is only necessary to perform orthogonalization when the core
+      !    dimension is non-zero
       if (coreDim /= 0) then
+
 #ifndef GAMMA
-         ! Form product of (coreValeOL)(coreCore) in temp matrix (valeCore).
-         call coreValeCoreCore (valeDim,coreDim,valeCore(:,:),&
-               & coreValeOL(:,:,i),coreCore(:,:,i))
 
-         ! Finally compute the product of the above
-         !   (valeCore)(coreCore) with coreValeOL.
-         call makeValeVale (valeDim,coreDim,valeDim,valeCore(:,:),&
-               & coreValeOL(:,:,i),valeVale(:,:,i,1),packedValeVale(:,:),1,0)
+         ! Initialize the vcTempInfo%local array to zero.
+         vcTempInfo%local(:,:,:) = 0.0_double
+
+         ! Subtract the product of (coreVale**H)(coreValeOL) and the product of
+         !    (coreVale_OL**H)(coreVale) from the valeVale matrix. See
+         !    documentation about non-overlap orthogonalization in
+         !    intgOrtho.F90 for details.
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call valeCoreCoreVale(valeDim,coreDim,cvOLInfo,cvInfo,vvInfo,i)
+
+         ! Form product of (valeCoreOL)(coreCore) and store into the temp
+         !    matrix (valeCore_temp).
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call valeCoreCoreCore(valeDim,coreDim,vcInfo,ccInfo,vcTempInfo,i)
+
+         ! Finally compute the product of (valeCore_temp)(coreValeOL) and add
+         !    it to the (valeVale). this completes the orthogonalization of the
+         !    current (non-overlap) VV matrix against the core.
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call makeValeVale(valeDim,coreDim,vcTempInfo,cvInfo,vvInfo,i)
+
 #else
-         ! Form product of (coreValeOL)(coreCore) in temp matrix (valeCore).
-         call coreValeCoreCoreGamma (valeDim,coreDim,valeCoreGamma,&
-               & coreValeOLGamma,coreCoreGamma)
 
-         ! Finally compute the product of the above
-         !   (valeCore)(coreCore) with coreValeOL.
-         call makeValeValeGamma (valeDim,coreDim,valeDim,valeCoreGamma,&
-               & coreValeOLGamma,valeValeGamma(:,:,1),&
-               & packedValeVale(:,:),1,0)
-#endif
-      else
+         ! Initialize the vcTempInfo%local array to zero.
+         vcTempInfo%local(:,:,:) = 0.0_double
 
-         ! Initialize the index for packing the valeVale matrix.
-         currIndex = 0
-#ifndef GAMMA
-         do j = 1, valeDim
-            do k = 1, j
-               currIndex = currIndex + 1
-               packedValeVale(1,currIndex) = &
-                     & real(valeVale(k,j,i,1),double)
-               packedValeVale(2,currIndex) = aimag(valeVale(k,j,i,1))
-            enddo
-         enddo
-#else
-         do j = 1, valeDim
-            do k = 1, j
-               currIndex = currIndex + 1
-               packedValeVale(1,currIndex) = valeValeGamma(k,j,1)
-            enddo
-         enddo
+         ! Subtract the product of (coreVale**H)(coreValeOL) and the product of
+         !    (coreVale_OL**H)(coreVale) from the valeVale matrix. See
+         !    documentation about non-overlap orthogonalization in
+         !    intgOrtho.F90 for details.
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call valeCoreCoreValeGamma(valeDim,coreDim,cvOLInfo,cvInfo,vvInfo,i)
+
+         ! Form product of (valeCoreOL)(coreCore) and store into the temp
+         !    matrix (valeCore_temp).
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call valeCoreCoreCoreGamma(valeDim,coreDim,vcInfo,ccInfo,vcTempInfo,i)
+
+         ! Finally compute the product of (valeCore_temp)(coreValeOL) and add
+         !    it to the (valeVale). this completes the orthogonalization of the
+         !    current (non-overlap) VV matrix against the core.
+         call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+         call makeValeValeGamma(valeDim,coreDim,vcTempInfo,cvInfo,vvInfo,i)
+
 #endif
       endif
-
-      ! Write the valeVale term onto disk in HDF5 format.
-      select case (opCode)
-      case (2)
-         call h5dwrite_f(atomKEOverlap_did(i),H5T_NATIVE_DOUBLE,&
-               & packedValeVale(:,:),atomDims,hdferr)
-         if (hdferr /= 0) stop 'Failed to write kinetic energy vale vale'
-      case (3)
-         call h5dwrite_f(atomNucOverlap_did(i),H5T_NATIVE_DOUBLE,&
-               & packedValeVale(:,:),atomDims,hdferr)
-         if (hdferr /= 0) stop 'Failed to write nuclear potential vale vale'
-      case (4)
-         call h5dwrite_f(atomPotOverlap_did(i,&
-               & potTypes(currPotTypeNumber)%cumulAlphaSum+currAlphaNumber),&
-               & H5T_NATIVE_DOUBLE,packedValeVale(:,:),atomDims,hdferr)
-         if (hdferr /= 0) stop 'Failed to write electronic potential vale vale'
-      end select
    enddo
 
+   ! Deallocate the vcTempInfo matrix
+   call deallocLocalArray(vcTempInfo)
+   ! Deallocate the conjugate transpose of cvInfo
+   call deallocLocalArray(vcInfo)
 
-   ! Deallocate matrices that are no longer necessary.
-#ifndef GAMMA
-   deallocate (valeCore)
-   deallocate (packedValeVale)
+#ifndef gamma
+   mpidtype = MPI_DOUBLE_COMPLEX
 #else
-   deallocate (valeCoreGamma)
-   deallocate (packedValeVale)
+   mpidtype = MPI_DOUBLE_PRECISION
 #endif
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (blcsinfo%mpiRank == 0) then
+      ! Write out Process 0's information
+      call writeValeVale(vvInfo,blcsInfo,numKPoints,potDim,0,0,1)
+   endif
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   ! Communicate with other processes and write out their information
+   do i=1, blcsinfo%mpisize-1
+      ! Other processes send local array
+      if (blcsinfo%mpiRank == i) then
+         ! First we need information from the process about the process row, and
+         ! column. Also, we need to know the size of the array to allocate.
+         sdata = (/blcsinfo%context, &
+                 & blcsinfo%prows, &
+                 & blcsinfo%pcols, &
+                 & blcsinfo%myprow, &
+                 & blcsinfo%mypcol, &
+                 & blcsinfo%mpirank, &
+                 & blcsinfo%mpisize/)
+
+         call MPI_Send(sdata,7,MPI_INTEGER,0,0,MPI_COMM_WORLD,mpierr)
+
+         dcount=size(vvInfo%local,1)*size(vvInfo%local,2)*size(vvInfo%local,3)
+
+         ! Now we can send the bulk of the data
+         call MPI_Send(vvInfo%lcoal,dcount,mpidtype,0,0,MPI_COMM_WORLD, mpierr)
+
+      ! Process zero receives array and writes to disk
+      else if (blcsInfo%mpiRank == 0) then
+         ! First receive information about the process and local array
+         call MPI_Recv(sdata,7,MPI_INTEGER,i,0,MPI_COMM_WORLD,mpistatus,mpierr)
+
+         tBlcsInfo%context = sdata(1)
+         tBlcsInfo%prows = sdata(2)
+         tBlcsInfo%pcols = sdata(3)
+         tBlcsInfo%myprow = sdata(4)
+         tBlcsInfo%mypcol = sdata(5)
+         tBlcsInfo%mpirank = sdata(6)
+         tBlcsInfo%mpisize = sdata(7)
+         call setupArrayDesc(tArrInfo,tBlcsInfo,valeDim,valeDim,numKPoints)
+
+         dcount=size(tArrInfo%local,1)*size(tArrInfo%local,2) * &
+               & size(tArrInfo%local,3)
+
+         ! Receive the local array information
+         call MPI_Recv(tArrInfo%local,dcount,mpidtype,i,0,MPI_COMM_WORLD, &
+               & mpistatus,mpierr)
+
+         call writeValeVale(tArrInfo,tBlcsInfo,numKPoints,potDim,0,0,1)
+         call deallocLocalArray(tArrInfo)
+      endif
+
+      call MPI_BARRIER(MPI_COMM_WORLD, mpierr)
+   enddo
 
 end subroutine ortho
-
-
-subroutine cleanUpIntegralsSCF
-
-   implicit none
-
-#ifndef GAMMA
-   deallocate (coreCore)
-   deallocate (valeVale)
-   deallocate (coreValeOL)
-#else
-   deallocate (coreCoreGamma)
-   deallocate (valeValeGamma)
-   deallocate (coreValeOLGamma)
-#endif
-
-end subroutine cleanUpIntegralsSCF
-
-
-end module O_IntegralsSCF

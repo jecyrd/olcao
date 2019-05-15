@@ -1,6 +1,0 @@
-#!/bin/bash
-
-h5fc -g ../../bstAtomPair.f90 ./bstTest.f90 -o bstTest
-#gfortran -g ../../bstAtomPair.f90 ./bstTest.f90 -o bstTest
-
-#ifort -g ../../bstAtomPair.f90 ./bstTest.f90 -o bstTest

@@ -1,5 +1,0 @@
-#!/bin/bash
-
-#h5fc -g ../kinds.f90 ../constants.f90 ../readData.f90 bstAtomPair.f90 interfaces.F90 parallel.f90  stringSubs.f90 mathSubs.f90 sortSubs.f90 timeStamps.f90 commandLine.f90 potSites.f90 potTypes.f90 atomicTypes.f90 atomicSites.f90 potential.f90 lattice.f90 basis.f90 kpoints.f90 gaussRelations.f90 gaussIntegrals.f90 hdf5SetupIntg.F90 hdf5SetupElec.f90 hdf5SetupExco.f90 hdf5Setup.f90 polcaoSetup.f90 exchCorr.f90 elecStat.f90 intgOrtho.F90 intgSaving.F90 integralsSCF.F90 coreCharge.f90 input.f90 OLCAO_Setup.f90 OLCAO_SetupWrap.f90 -o OLCAOsetup -lscalapack -llapack -lblas
-
-h5fc -g -fcheck=all ../kinds.f90 ../constants.f90 ../readData.f90 bstAtomPair.f90 interfaces.F90 parallel.f90  stringSubs.f90 mathSubs.f90 sortSubs.f90 timeStamps.f90 commandLine.f90 potSites.f90 potTypes.f90 atomicTypes.f90 atomicSites.f90 potential.f90 lattice.f90 basis.f90 kpoints.f90 gaussRelations.o gaussIntegrals.o hdf5SetupIntg.F90 hdf5SetupElec.f90 hdf5SetupExco.f90 hdf5Setup.f90 polcaoSetup.f90 exchCorr.f90 elecStat.f90 intgOrtho.F90 intgSaving.F90 integralsSCF.F90 coreCharge.f90 input.f90 OLCAO_Setup.f90 OLCAO_SetupWrap.f90 -o OLCAOsetup -lscalapack -llapack -lblas

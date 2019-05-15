@@ -1282,7 +1282,9 @@ subroutine gaussOverlapNP(blcsinfo, cvOLArrayInfo, atomList)
 end subroutine gaussOverlapNP
 
 ! Electronic Potential three center overlap integrals.
-subroutine gaussOverlapEP
+subroutine gaussOverlapEP(blcsInfo,cvOLArrayInfo, atomList, &
+      & potDim,currAlphaNumber,currPotElement,currPotNumber,currMultiplicity, &
+      & currPotAlpha,currPotTypeNumber)
 
    ! Import necessary modules.
    use O_Kinds
@@ -1298,11 +1300,29 @@ subroutine gaussOverlapEP
    use O_IntgSaving
    use O_GaussianIntegrals
 
+   ! Import necessary parallel modules
+   use MPI
+   use O_Parallel
+   use O_ParallelSetup
+
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
+   ! Define the passed parameters.
+   type(AtomPair), pointer :: atomList
+   type(BlacsInfo), intent(in) :: blcsinfo
+   type(ArrayInfo), intent(inout) :: cvOLArrayInfo
+   integer, intent(in) :: potDim
+   integer, intent(in) :: currPotNumber
+   integer, intent(in) :: currPotElement
+   integer, intent(in) :: currAlphaNumber
+   integer, intent(in) :: currMultiplicity
+   integer, intent(in) :: currPotTypeNumber
+   real (kind=double), intent(in) :: currPotAlpha
+
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
+   logical :: doLoop = .true. ! Control variable for atom-atom loop
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -1362,6 +1382,12 @@ subroutine gaussOverlapEP
    real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
          ! lattice points will be considered for integration.
 
+   ! Define varible for MPI, and distributed operations
+   type(ArrayInfo) :: vvArrayInfo
+   type(ArrayInfo) :: cvArrayInfo
+   type(ArrayInfo) :: ccArrayInfo
+   type(AtomPair), pointer :: currAtomPair => null()
+
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
    allocate (currentAlphas       (maxNumAtomAlphas,2))
@@ -1370,27 +1396,30 @@ subroutine gaussOverlapEP
    allocate (pairXBasisFn2       (16,maxNumAtomAlphas,maxNumStates))
    allocate (pairXBasisFn12      (maxNumStates,maxNumStates))
 #ifndef GAMMA
-   allocate (coreVale            (coreDim,valeDim,numKPoints))
    allocate (currentPair         (maxNumStates,maxNumStates,numKPoints))
 #else
-   allocate (coreValeGamma       (coreDim,valeDim))
    allocate (currentPairGamma    (maxNumStates,maxNumStates))
 #endif
 
+   ! Setup array and descriptors for this set of integrals
+   call setupArrayDesc(vvArrayInfo, blcsinfo, valeDim, valeDim, numKPoints)
+   call setupArrayDesc(cvArrayInfo, blcsinfo, coreDim, valeDim, numKPoints)
+   call setupArrayDesc(ccArrayInfo, blcsinfo, coreDim, coreDim, numKPoints)
 
-   ! Initialize key matrices
-#ifndef GAMMA
-   coreVale      (:,:,:)      = 0.0_double
-   valeVale      (:,:,:,:)    = 0.0_double
-   coreCore      (:,:,:)      = 0.0_double
-#else
-   coreValeGamma      (:,:)   = 0.0_double
-   valeValeGamma      (:,:,:) = 0.0_double
-   coreCoreGamma      (:,:)   = 0.0_double
-#endif
+   currAtomPair => atomList
 
    ! Begin atom-atom overlap loops.
-   do i = 1, numAtomSites
+   do while ( doLoop ) ! atomLoop = 1, size(atomPairs,1)
+      i = currAtomPair%I
+      j = currAtomPair%J
+
+      ! Procedurally this might make more sense to do at the end of the loop,
+      !   because it is not relative till then. But it works just fine here too.
+      if (associated(currAtomPair%next)) then
+         currAtomPair => currAtomPair%next
+      else
+         doLoop = .false.
+      endif
 
       ! Obtain local copies of key data from larger global data structures for
       !   the first looped atom.
@@ -1399,267 +1428,262 @@ subroutine gaussOverlapEP
             & currentNumAlphas,currentlmIndex,currentlmAlphaIndex,&
             & currentPosition,currentAlphas,currentBasisFns)
 
-      ! Begin a loop over the other atoms in the system
-      do j = i, numAtomSites
-
-         ! Obtain local copies of key data from larger global data structures
-         !   for the second looped atom.
-         call initializeAtomSite(j,2,currentAtomType,currentElements,&
-            & currentNumTotalStates,currentNumCoreStates,currentNumValeStates,&
-            & currentNumAlphas,currentlmIndex,currentlmAlphaIndex,&
-            & currentPosition,currentAlphas,currentBasisFns)
+      ! Obtain local copies of key data from larger global data structures
+      !   for the second looped atom.
+      call initializeAtomSite(j,2,currentAtomType,currentElements,&
+         & currentNumTotalStates,currentNumCoreStates,currentNumValeStates,&
+         & currentNumAlphas,currentlmIndex,currentlmAlphaIndex,&
+         & currentPosition,currentAlphas,currentBasisFns)
 
 
-         ! At this point all the data that defines the nature of the two atoms
-         !   in this pair have been copied and defined.
+      ! At this point all the data that defines the nature of the two atoms
+      !   in this pair have been copied and defined.
 
-         ! Find the lattice point closest to the difference between the two
-         !   atom sites.
-         call findLatticeVector((currentPosition(:,1)-currentPosition(:,2)),&
-               & latticeVector)
+      ! Find the lattice point closest to the difference between the two
+      !   atom sites.
+      call findLatticeVector((currentPosition(:,1)-currentPosition(:,2)),&
+            & latticeVector)
 
-         ! Determine the square of the minimum seperation distance between the
-         !   two atoms.
-         atomSiteSepSqrd = sum((currentPosition(:,1) - currentPosition(:,2) - &
-               & latticeVector(:))**2)
+      ! Determine the square of the minimum seperation distance between the
+      !   two atoms.
+      atomSiteSepSqrd = sum((currentPosition(:,1) - currentPosition(:,2) - &
+            & latticeVector(:))**2)
 
-         ! Obtain the maximum distance from either atom where the overlap
-         !   is considered to be non-negligable.
-         currentNegligLimit = alphaDist(1,1,currentElements(1),&
-               & currentElements(2))
+      ! Obtain the maximum distance from either atom where the overlap
+      !   is considered to be non-negligable.
+      currentNegligLimit = alphaDist(1,1,currentElements(1),&
+            & currentElements(2))
 
-         ! Determine if there are no alpha terms for this atom pair that fall
-         !   within the current negligability limit.  Cycle if there are none.
-         if (atomSiteSepSqrd > currentNegligLimit) cycle
+      ! Determine if there are no alpha terms for this atom pair that fall
+      !   within the current negligability limit.  Cycle if there are none.
+      if (atomSiteSepSqrd > currentNegligLimit) cycle
 
-         ! Determine the maximum radius beyond which no lattice point will be
-         !   considered to contribute to the overlap integral for this atom
-         !   pair.  (This is the law of cosines c^2 = a^2 + b^2 + 2ab*cos(g)
-         !   with g = gamma = angle between a and b.  Here atomSiteSepSqrd=a^2,
-         !   currentNegligLimit = b^2,g=0.)
-         maxLatticeRadius = atomSiteSepSqrd + currentNegligLimit + 2.0_double*&
-                          & sqrt(atomSiteSepSqrd * currentNegligLimit)
+      ! Determine the maximum radius beyond which no lattice point will be
+      !   considered to contribute to the overlap integral for this atom
+      !   pair.  (This is the law of cosines c^2 = a^2 + b^2 + 2ab*cos(g)
+      !   with g = gamma = angle between a and b.  Here atomSiteSepSqrd=a^2,
+      !   currentNegligLimit = b^2,g=0.)
+      maxLatticeRadius = atomSiteSepSqrd + currentNegligLimit + 2.0_double*&
+                       & sqrt(atomSiteSepSqrd * currentNegligLimit)
 
-         ! Check if we have to check more lattice points than were determined
-         !   to be needed by comparing the maxlatticeRadius to the maximum
-         !   radius of the lattice points defined earlier.
-         if (maxLatticeRadius > cellSizesReal(numCellsReal)) then
-            write (20,*) 'More lattice points needed for this atom overlap pair'
-            write (20,*) 'maxLatticeRadius requested=',maxLatticeRadius
-            write (20,*) 'max available=',cellSizesReal(numCellsReal)
-            stop
+      ! Check if we have to check more lattice points than were determined
+      !   to be needed by comparing the maxlatticeRadius to the maximum
+      !   radius of the lattice points defined earlier.
+      if (maxLatticeRadius > cellSizesReal(numCellsReal)) then
+         write (20,*) 'More lattice points needed for this atom overlap pair'
+         write (20,*) 'maxLatticeRadius requested=',maxLatticeRadius
+         write (20,*) 'max available=',cellSizesReal(numCellsReal)
+         stop
+      endif
+
+      ! Initialize the matrix for this atom pair that will record the
+      !   overlap integrals with bloch vector (kpoint) phase factors.
+#ifndef GAMMA
+      currentPair(:,:,:) = 0.0_double
+#else
+      currentPairGamma(:,:) = 0.0_double
+#endif
+
+      ! Begin a loop over all the lattice points to shift the position of
+      !   atom number 2 to all the replicated cells.
+      do k = 1, numCellsReal
+
+         ! Exit the loop when we have exceeded the necessary number of
+         !   lattice points based on distance.
+         if (cellSizesReal(k) > maxLatticeRadius) exit
+
+         ! For the electronic potential we have one more test to prevent
+         !   other potential terms of the current potential type from
+         !   passing this point.
+         if (checkElecPotInteraction(i,j,k) == 1) then
+            cycle
+         else
+            ! Assume now that this alpha will not have any interactions
+            !   with this cell/atom/atom set.
+            elecPotInteraction = 0
          endif
 
-         ! Initialize the matrix for this atom pair that will record the
-         !   overlap integrals with bloch vector (kpoint) phase factors.
-#ifndef GAMMA
-         currentPair(:,:,:) = 0.0_double
-#else
-         currentPairGamma(:,:) = 0.0_double
-#endif
+         ! Obtain the position of atom #2 shifted by the current lattice.
+         shiftedAtomPos(:) = currentPosition(:,2) + latticeVector(:) + &
+               & cellDimsReal(:,k)
 
-         ! Begin a loop over all the lattice points to shift the position of
-         !   atom number 2 to all the replicated cells.
-         do k = 1, numCellsReal
+         ! Obtain the square of the magnitude of the seperation vector
+         !   between atom 1 and the shifted position of atom 2.
+         shiftedAtomSiteSep = sum ((currentPosition(:,1) - &
+               & shiftedAtomPos(:))**2)
 
-            ! Exit the loop when we have exceeded the necessary number of
-            !   lattice points based on distance.
-            if (cellSizesReal(k) > maxLatticeRadius) exit
-
-            ! For the electronic potential we have one more test to prevent
-            !   other potential terms of the current potential type from
-            !   passing this point.
-            if (checkElecPotInteraction(i,j,k) == 1) then
-               cycle
-            else
-               ! Assume now that this alpha will not have any interactions
-               !   with this cell/atom/atom set.
-               elecPotInteraction = 0
-            endif
-
-            ! Obtain the position of atom #2 shifted by the current lattice.
-            shiftedAtomPos(:) = currentPosition(:,2) + latticeVector(:) + &
-                  & cellDimsReal(:,k)
-
-            ! Obtain the square of the magnitude of the seperation vector
-            !   between atom 1 and the shifted position of atom 2.
-            shiftedAtomSiteSep = sum ((currentPosition(:,1) - &
-                  & shiftedAtomPos(:))**2)
-
-            ! Determine if this shifted atom position puts it outside of the
-            !   above determined negligability limit for this atom pair.
-            if (shiftedAtomSiteSep > currentNegligLimit) cycle
+         ! Determine if this shifted atom position puts it outside of the
+         !   above determined negligability limit for this atom pair.
+         if (shiftedAtomSiteSep > currentNegligLimit) cycle
 
 
-            ! Initialize a matrix to hold the product of the overlap integrals
-            ! times the atom2 basis functions.
-            pairXBasisFn2(:,:currentNumAlphas(1),&
-                  &:currentNumTotalStates(2)) = 0.0_double
+         ! Initialize a matrix to hold the product of the overlap integrals
+         ! times the atom2 basis functions.
+         pairXBasisFn2(:,:currentNumAlphas(1),&
+               &:currentNumTotalStates(2)) = 0.0_double
 
-            ! Initialize a variable to track the largest atomic alpha used
-            !   from atom 1.
-            maxAlpha1Used = 0
+         ! Initialize a variable to track the largest atomic alpha used
+         !   from atom 1.
+         maxAlpha1Used = 0
 
-            ! Now we start loops over the alphas of each atomic type.  For each
-            !   alpha pair the overlap is tested to determine if it is
-            !   negligable or not.  The alphas for atom 1 are tested in turn
-            !   with the first alpha of atom 2.  After all the atom 1 alphas
-            !   have been tested or the test fails we test all the alphas
-            !   of atom 2 with the first alpha of atom 1 until all the alphas
-            !   of atom 2 have been used or the test fails.  Then we increment
-            !   the loop counter by 1.  The second iteration of the loop
-            !   obviously works just like the first except that the only
-            !   difference is that instead of starting with the first alphas
-            !   of atom 1 and atom 2, we always start with the second alphas
-            !   of both atoms.
+         ! Now we start loops over the alphas of each atomic type.  For each
+         !   alpha pair the overlap is tested to determine if it is
+         !   negligable or not.  The alphas for atom 1 are tested in turn
+         !   with the first alpha of atom 2.  After all the atom 1 alphas
+         !   have been tested or the test fails we test all the alphas
+         !   of atom 2 with the first alpha of atom 1 until all the alphas
+         !   of atom 2 have been used or the test fails.  Then we increment
+         !   the loop counter by 1.  The second iteration of the loop
+         !   obviously works just like the first except that the only
+         !   difference is that instead of starting with the first alphas
+         !   of atom 1 and atom 2, we always start with the second alphas
+         !   of both atoms.
 
-            ! The loop must be up to the smaller number of alphas.
-            do l = 1, min(currentNumAlphas(1),currentNumAlphas(2))
+         ! The loop must be up to the smaller number of alphas.
+         do l = 1, min(currentNumAlphas(1),currentNumAlphas(2))
 
-               ! Set the mode to zero to say that we are incrementing through
-               !   neither the atom 1 alpha array nor the atom 2 alpha array.
-               currentMode = 0
+            ! Set the mode to zero to say that we are incrementing through
+            !   neither the atom 1 alpha array nor the atom 2 alpha array.
+            currentMode = 0
 
-               ! Initialize the matrix index values for the two alphas.
-               alphaIndex(:) = l
+            ! Initialize the matrix index values for the two alphas.
+            alphaIndex(:) = l
 
-               ! Check if this alpha pair has any non-negligable contribution.
-               if (alphaDist(l,l,currentElements(1),currentElements(2)) < &
-                     & shiftedAtomSiteSep) exit
+            ! Check if this alpha pair has any non-negligable contribution.
+            if (alphaDist(l,l,currentElements(1),currentElements(2)) < &
+                  & shiftedAtomSiteSep) exit
 
-               ! Start looping over atomic alphas looking for a negligable
-               !   contribution for each alpha pair.
-               do while (.true.)
+            ! Start looping over atomic alphas looking for a negligable
+            !   contribution for each alpha pair.
+            do while (.true.)
 
-                  ! Check if we are going through atom 1 alphas.
+               ! Check if we are going through atom 1 alphas.
+               if (currentMode == 1) then
+
+                  ! Go to the next atom 1 alpha
+                  alphaIndex(1) = alphaIndex(1) + 1
+
+                  ! Check if there are no alphas left to do for atom 1
+                  if (alphaIndex(1) > currentNumAlphas(1)) then
+
+                     ! Switch mode to go through atom 2 alphas on the
+                     !   current diagonal alpha of atom 1.
+                     currentMode = 2
+                     alphaIndex(1) = l
+                     cycle
+                  endif
+
+               ! Check if we are going through atom 2 alphas.
+               elseif (currentMode == 2) then
+
+                  ! Go to the next atom 2 alpha
+                  alphaIndex(2) = alphaIndex(2) + 1
+
+                  ! Check if there are no alphas left to do for atom 2
+                  if (alphaIndex(2) > currentNumAlphas(2)) exit
+               endif
+
+               ! Check if this atom alpha pair has any non negligable
+               !   overlap.
+               if (alphaDist(alphaIndex(1),alphaIndex(2),currentElements(1),&
+                     & currentElements(2)) < shiftedAtomSiteSep) then
+
+                  ! Switch mode to go through atom 2 alphas on the current
+                  !   diagonal alpha of atom 1.
                   if (currentMode == 1) then
-
-                     ! Go to the next atom 1 alpha
-                     alphaIndex(1) = alphaIndex(1) + 1
-
-                     ! Check if there are no alphas left to do for atom 1
-                     if (alphaIndex(1) > currentNumAlphas(1)) then
-
-                        ! Switch mode to go through atom 2 alphas on the
-                        !   current diagonal alpha of atom 1.
-                        currentMode = 2
-                        alphaIndex(1) = l
-                        cycle
-                     endif
-
-                  ! Check if we are going through atom 2 alphas.
-                  elseif (currentMode == 2) then
-
-                     ! Go to the next atom 2 alpha
-                     alphaIndex(2) = alphaIndex(2) + 1
-
-                     ! Check if there are no alphas left to do for atom 2
-                     if (alphaIndex(2) > currentNumAlphas(2)) exit
+                     currentMode = 2
+                     alphaIndex(1) = l
+                     cycle
+                  else
+                     exit
                   endif
+               endif
 
-                  ! Check if this atom alpha pair has any non negligable
-                  !   overlap.
-                  if (alphaDist(alphaIndex(1),alphaIndex(2),currentElements(1),&
-                        & currentElements(2)) < shiftedAtomSiteSep) then
+               ! At this point a sufficient overlap between atomic Gaussians
+               !   has been shown to exist.
+               contrib = .true.
 
-                     ! Switch mode to go through atom 2 alphas on the current
-                     !   diagonal alpha of atom 1.
-                     if (currentMode == 1) then
-                        currentMode = 2
-                        alphaIndex(1) = l
-                        cycle
-                     else
-                        exit
-                     endif
-                  endif
+               ! We can proceed with the next step of the calculation. In
+               !   this case a further loop over all the sites for the
+               !   current term of the electronic potential will be computed.
+               call electronicPE (contrib,alphaIndex,currentElements,&
+                     & currentlmAlphaIndex,shiftedAtomSiteSep,&
+                     & currentPosition,shiftedAtomPos,oneAlphaPair,&
+                     & currentAlphas)
 
-                  ! At this point a sufficient overlap between atomic Gaussians
-                  !   has been shown to exist.
-                  contrib = .true.
+               ! Collect the results of the overlap of the current alpha
+               !   times the basis functions of atom 2.
+               if (contrib .eqv. .true.) then
+                  do m = 1, currentNumTotalStates(2)
+                     pairXBasisFn2(:currentlmAlphaIndex(alphaIndex(1),1),&
+                           & alphaIndex(1),m) = &
+                           & pairXBasisFn2(:currentlmAlphaIndex &
+                           & (alphaIndex(1),1),alphaIndex(1),m) + &
+                           & oneAlphaPair(:currentlmAlphaIndex &
+                           & (alphaIndex(1),1),currentlmIndex(m,2)) * &
+                           & currentBasisFns(alphaIndex(2),m,2)
+                  enddo
 
-                  ! We can proceed with the next step of the calculation. In
-                  !   this case a further loop over all the sites for the
-                  !   current term of the electronic potential will be computed.
-                  call electronicPE (contrib,alphaIndex,currentElements,&
-                        & currentlmAlphaIndex,shiftedAtomSiteSep,&
-                        & currentPosition,shiftedAtomPos,oneAlphaPair,&
-                        & currentAlphas)
+                  ! Update the maximum alpha used from atom 1.
+                  maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
+               endif
 
-                  ! Collect the results of the overlap of the current alpha
-                  !   times the basis functions of atom 2.
-                  if (contrib .eqv. .true.) then
-                     do m = 1, currentNumTotalStates(2)
-                        pairXBasisFn2(:currentlmAlphaIndex(alphaIndex(1),1),&
-                              & alphaIndex(1),m) = &
-                              & pairXBasisFn2(:currentlmAlphaIndex &
-                              & (alphaIndex(1),1),alphaIndex(1),m) + &
-                              & oneAlphaPair(:currentlmAlphaIndex &
-                              & (alphaIndex(1),1),currentlmIndex(m,2)) * &
-                              & currentBasisFns(alphaIndex(2),m,2)
-                     enddo
+               ! Switch mode from the initial state of no searching to the
+               !   state of searching along alphas from atom 1.
+               if (currentMode == 0) then
+                  currentMode = 1
+               endif
+            enddo
+         enddo  ! min number of alphas between the two atoms l
 
-                     ! Update the maximum alpha used from atom 1.
-                     maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
-                  endif
+         ! At this point all the alpha loops are complete and we can form a
+         !   product with the atom 1 basis function to give the overlap
+         !   integral in a complete basis representation.
+         call multWithBasisFn1 (currentBasisFns,pairXBasisFn2, &
+               & pairXBasisFn12,currentlmIndex,currentNumTotalStates, &
+               & maxAlpha1Used)
 
-                  ! Switch mode from the initial state of no searching to the
-                  !   state of searching along alphas from atom 1.
-                  if (currentMode == 0) then
-                     currentMode = 1
-                  endif
-               enddo
-            enddo  ! min number of alphas between the two atoms l
-
-            ! At this point all the alpha loops are complete and we can form a
-            !   product with the atom 1 basis function to give the overlap
-            !   integral in a complete basis representation.
-            call multWithBasisFn1 (currentBasisFns,pairXBasisFn2, &
-                  & pairXBasisFn12,currentlmIndex,currentNumTotalStates, &
-                  & maxAlpha1Used)
-
-            ! Collect this atom 1, atom 2 basis function overlap matrix for all
-            !   bloch vectors (kpoints) with phase factors appropriate to the
-            !   current atom 2 lattice vector.  NOTE that the k index is over
-            !   the number of cells in the superlattice.
+         ! Collect this atom 1, atom 2 basis function overlap matrix for all
+         !   bloch vectors (kpoints) with phase factors appropriate to the
+         !   current atom 2 lattice vector.  NOTE that the k index is over
+         !   the number of cells in the superlattice.
 #ifndef GAMMA
-            call applyPhaseFactors (currentPair,pairXBasisFn12(1:&
-                  & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0,0)
+         call applyPhaseFactors (currentPair,pairXBasisFn12(1:&
+               & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
+               & currentNumTotalStates(1),currentNumTotalStates(2),k,0,0)
 #else
-            call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
-                  & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),0)
+         call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
+               & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
+               & currentNumTotalStates(1),currentNumTotalStates(2),0)
 #endif
-            ! If there were no interactions for this cell then mark the
-            !   appropriate bit to make sure that the next atomic alpha does
-            !   not try to compute anything for this cell-atom pair.
-            if (elecPotInteraction == 0) then
-               anyElecPotInteraction(i,j,matrixIndex) = &
-                     & ibclr(anyElecPotInteraction(i,j,matrixIndex),cellIndex)
-            endif
+         ! If there were no interactions for this cell then mark the
+         !   appropriate bit to make sure that the next atomic alpha does
+         !   not try to compute anything for this cell-atom pair.
+         if (elecPotInteraction == 0) then
+            anyElecPotInteraction(i,j,matrixIndex) = &
+                  & ibclr(anyElecPotInteraction(i,j,matrixIndex),cellIndex)
+         endif
 
-         enddo !(k superlattice)
+      enddo !(k superlattice)
 
-         ! At this point all the lattice sums for the current atom pair are
-         !   complete.
+      ! At this point all the lattice sums for the current atom pair are
+      !   complete.
 
-         ! So now we can arrange the data from this atom into a set of three
-         !   large matrices.  A valence-valence matrix, a core-valence matrix,
-         !   and a core-core matrix.
+      ! So now we can arrange the data from this atom into a set of three
+      !   large matrices.  A valence-valence matrix, a core-valence matrix,
+      !   and a core-core matrix.
 
 #ifndef GAMMA
-         ! First we must make a correction for the atom 2 lattice origin shift.
-         call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
-               & latticeVector,numKPoints,0)
-         call saveCurrentPair(i,j,numKPoints,currentPair,valeVale(:,:,:,1),&
-               & coreVale,coreCore)
+      ! First we must make a correction for the atom 2 lattice origin shift.
+      call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
+            & latticeVector,numKPoints,0)
+      call saveCurrentPair(i,j,numKPoints,currentPair,blcsinfo,vvArrayInfo, &
+            & ccArrayInfo, cvArrayInfo)
 #else
-         call saveCurrentPairGamma(i,j,currentPairGamma,&
-               & valeValeGamma(:,:,1),coreValeGamma,coreCoreGamma)
+      call saveCurrentPairGamma(i,j,currentPairGamma,&
+            & valeValeGamma(:,:,1),coreValeGamma,coreCoreGamma)
 #endif
-
-      enddo ! (Atom loop #2)
-   enddo    ! (Atom loop #1)
+   enddo    ! (End atom-atom loop.)
 
    ! At this point all atom pairs have been computed.  Now, we compute the
    !   valeVale with the effects of the core orthogonalization.  We can also
@@ -1680,7 +1704,13 @@ subroutine gaussOverlapEP
    !   operation code signifying that a non-overlap orthogonalization should be
    !   done, and specifically that the result is for the electronic potential
    !   and that it should be written to the EP portion of the hdf5 file.
-   call ortho(4)
+   call ortho(4,vvArrayInfo,ccArrayInfo,cvArrayInfo,cvOLArrayInfo, &
+         & blcsinfo, potDim, 0, 0)
+
+   ! Deallocate the local matrices
+   call deallocLocalArray(vvArrayInfo)
+   call deallocLocalArray(cvArrayInfo)
+   call deallocLocalArray(ccArrayInfo)
 
 end subroutine gaussOverlapEP
 

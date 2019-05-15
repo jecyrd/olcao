@@ -1,0 +1,555 @@
+#!/usr/bin/env perl
+#
+sub printHelp
+{
+   print <<ENDHELP;
+# PROGRAM:  modStruct
+# PURPOSE:  To modify an atomic structure input file according to some requests
+#           such as supercell generation, translation, rotation, bond-valence
+#           analysis, etc.
+#
+# The -i option allows the user to specify an alternate input file.  If not
+#   given, then the default value of "olcao.dat" will be used.
+# The -o opiton allows the user to specify an alternate output file.  If not
+#   given, then the default value of "olcao.new" will be used.
+# The -t option allows the user to specify a title to be included in the newly
+#   created \$outFile.  The \$title should be contained within quotes if it
+#   has any whitespace characters.
+# The -abcxyz option defines the orientation of the a,b,c lattice vectors with
+#   respect to the x,y,z axes.  The idea is that \$abc[1] will be aligned with
+#   \$xyz[1] and that \$abc[2] will be in the \$xyz[1],\$xyz[2] plane so that
+#   \$abc[3] can be in an arbitrary x,y,z direction.  The default values if this
+#   option is not given are 1 1 2 2 which will cause a to align with x, and b
+#   to be in the x,y plane so that c is in an arbitrary x,y,z direction.  This
+#   option can only be applied once at the present time.  Don't get too crazy
+#   with it either.  ^_^
+# The -sc option requests the creation of a supercell where the a,b,c axis are
+#   replicated \$sc[1], \$sc[2], and \$sc[3] times.  The values for 
+#   \$mirror[1,2,3] must each be either a 0 or a 1.  If it is a 0 then simple 
+#   supercells are created for that axis.  If it is a 1, then every other
+#   supercell will be a mirror image of the previous cell.  I.e. the first new
+#   cell will have reversed positions, the second  will not, the third will,
+#   etc.  If this option is given then it will override any value given within
+#   the "supercell" line of the input file.
+# The -trans option requests that the atomic positions in the atomic structure
+#   file be linearly translated by \$trans[1], \$trans[2], and \$trans[3] in
+#   those specific XYZ directions.  (At present the translations are only in
+#   the XYZ directions and so trans[1..3] must be in XYZ direct coordinates.
+# The -rotA option requests that the atomic positions in the atomic structure
+#   file be rotated given the *A*xis of rotation.  The \$rot[1], \$rot[2], and
+#   \$rot[3] values are a vector specifying the axis of rotation in directXYZ
+#   coordinates.  Then, the \$rotAngle specifies the amount of the rotation in
+#   degrees. The default origin for the normal vector is the origin, but that
+#   can be changed with the -orig subopiton.  If -orig is given, then the
+#   origin of the normal vector is given by its parameters in directXYZ
+#   coordinates. Regarding periodic boundary conditions we view the simulation
+#   cell as a constant so that atoms which are rotated out of the cell must be
+#   *effectively* rotated back into the cell as if they came from a neighboring
+#   replicated cell. This is mainly used for simulation boxes that contain
+#   isolated molecules or are cubic.
+# The -rotP option requests that the atomic positions in the atomic structure
+#   file be rotated given three points that define a *P*lane and which thus
+#   defines a normal vector which is the axis of rotation. Periodic boundary
+#   conditions are still retained as with -rotA. Further the origin will follow
+#   the same rule of defaulting to the origin (0,0,0). Note that for this
+#   definition, the amount to rotate by is determined either by explicitly
+#   giving an angle or by letting the program compute an angle. The angle is
+#   computed as the angle between the 2nd and 3rd points.  Often times the
+#   first point will be 0,0,0.
+# The -rothkl option has some similarities with the other rotation operations,
+#   but there are also some crucial differences. The primary difference is that
+#   the purpose of this operation is to reorient and resize the crystal lattice
+#   to make it ready for creation of a surface. To proceed, specify the indices
+#   *in units of lattice vector magnitudes* that define *a vector direction*.
+#   This direction is interpreted as the normal of a plane. The vector will
+#   then be rotated about whatever axis and by whatever degree amount so as to
+#   be coincident with the Cartesian z-axis. The intent is that the plane
+#   perpendicular to the z-axis will be turned into a surface in a slab model.
+#   All direct space atomic coordinates will be rotated in the same way. To
+#   this point it is similar to the other rotation operations, but now it
+#   deviates. After applying this rotation, the simulation cell will be
+#   modified (enlarged) to retain periodicity. As an example, this is best
+#   understood in a 2D model with lattice height (y) of 10 and width (x) of 5
+#   where h=k=1 (and there is no need for l in 2D). The length of the new
+#   y-axis (height) will be equal to the length of the diagonal from (0,0) to
+#   (5,10) which is ~11.18. The length of the new x-axis (width) is defined by
+#   the requirement that the new cell *must* have periodic boundary conditions.
+#   PRESENTLY, THIS ONLY WORKS FOR SIMPLE SIMPLE SIMPLE CASES.
+#   (Note that in the y-axis, this is followed by "filling" of empty space
+#   within the cell.)
+# The -filter option will eliminate certain atoms from the model that are too
+#   close to other atoms.  If an atom is found to be with \$minDistFilter of
+#   another atom, then it is removed.  THIS DOES NOT REALLY WORK YET.
+# The -addvac option will increase the cell size but retain atomic direct
+#   space coordinates so that a region of vacuum is created in the model.  The
+#   \$vacAxis can be a, b, or c.  The \$vacAmt is the amount of vacuum to add in
+#   angstroms.  The vacuum will be added to only one side so that a translation
+#   must be performed to move the atoms into the center of the cell "between"
+#   the two vacuum layers.  Further, to choose the plane of the surface it is
+#   necessary to perform a translation before the addvac option is used. Also,
+#   the ABC Vectors in XYZ format will be reobtained after extending the ABC
+#   magnitudes only. Thus, at present, the directions of ABC may change. The
+#   assumption is that a is in the x direction, b is in the xy plane, etc.
+#   See getABCVectors subroutine in StructureControl for details.
+# The -cutsphere option will remove atoms from the model. The user defines
+#   a sphere centered on either an atom, an xyz coordinate, or an abc
+#   coordinate with a specific radius (default = 4A). Then, the user defines a
+#   zone to operate on (either "in" or "out", default = "in"). Then, all atoms
+#   in the selected zone will be removed from the model.
+# The -cutblock option does the same thing as the cutsphere option except that
+#   the user defines coordinates for a 3D rectangle. Then atoms are removed
+#   from the model according to the zone selected (again, default = "in").
+# The -ortho option will convert the lattice type of the given cell to an
+#   orthorhombic type.  This should only be used for cells that have been
+#   carefully analyzed.  At present only hexagonal cells can be converted to
+#   orthorhombic type and then only after they have been made into a supercell
+#   that doubles the cell size along the direction of the axis to be changed.
+#   Normally, that is a 1 2 1 supercell. The a-axis remains the same.
+# The -perturb option will apply a small shift to the atomic positions of each
+#   atom in the model.  The \$maxPertMag is the magnitude of the shift measured
+#   in angstroms.
+# The [...] indicates that it is possible to apply each operation in a sequence
+#   and that the steps are modular and can be applied in any desired sequence
+#   any number of times.
+# The -sc, -trans, -rot, and -filter options can be repeated as many times as
+#   needed and the operations will be performed in the order given on the
+#   command line.
+# The -help option gives this help.
+#
+# USAGE: modStruct [-i \$infile] [-o \$outFile] [-t \$title]
+#                  [-abcxyz \$abc[1] \$xyz[1] \$abc[2] \$xyz[2]]
+#                  [[-sc \$sc[1] \$sc[2] \$sc[3] 
+#                        \$mirror[1] \$mirror[2] \$mirror[3]]
+#                   [-trans \$trans[1] \$trans[2] \$trans[3]]
+#                   [-rotA \$rot[1] \$rot[2] \$rot[3] \$rotAngle
+#                          [-orig \$orig[1] \$orig[2] \$orig[3]]]
+#                   [-rotP \$p1[1] \$p1[2] \$p1[3]
+#                          \$p2[1] \$p2[2] \$p2[3]
+#                          \$p3[1] \$p3[2] \$p3[3]
+#                          [-angle \$rotAngle]
+#                          [-orig \$orig[1] \$orig[2] \$orig[3]]]
+#                   [-rothkl \$h \$k \$l]
+#                   [-filter \$minDistFilter]
+#                   [-addvac \$vacAxis \$vacAmt]
+#                   [-cutblock [-zone \$zone]
+#                          <-xyz \$fromx \$tox \$fromy \$toy \$fromz \$toz> ||
+#                          <-abc \$froma \$toa \$fromb \$tob \$fromc \$toc>]
+#                   [-cutsphere <[-atom \$targetAtom] || [-atxyz \$x \$y \$z] ||
+#                          [-atabc \$a \$b \$c]> [-radius \$radius]
+#                          [-zone \$zone]
+#                   [-ortho] [-perturb \$maxPertMag] [...]]
+#                  [-help]
+ENDHELP
+   exit;
+}
+
+###############################################
+# Begin program execution #####################
+###############################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+
+# Declare global variables.
+my $pi = 3.1415926535897932384626433832795;
+my $inFile;     # Input file.
+my $outFile;    # Output file.
+my $title;      # Title for output file.
+my @abc;        # List ordering a,b,c axes for relation to x,y,z axes.
+my @xyz;        # List ordering x,y,z axes used to relate a,b,c axes. See above.
+my @sc;         # Supercell directions and times of multiplication.
+my @mirror;     # Mirror the supercells (1) or not (0).
+my @trans;      # Directions and amounts of linear translation.
+my @rot;        # Axis of rotation.
+my @p1;         # Plane of rotation point 1.
+my @p2;         # Plane of rotation point 2.
+my @p3;         # Plane of rotation point 3.
+my @rotAngle;   # Degree of rotation.
+my @rotOrig;    # Origin of the normal vector (axis of rotation).
+my @hkl;        # Miller indices in (h k l) format.
+my @vacAxis;    # Axis on which to create a vacuum.
+my @vacAmt;     # Amount of vacuum to add in Angstroms.
+my @maxPertMag; # Maximum magnitued of the applied perturbation.
+my $numOps;     # Number of operations to perform.
+my @ops;        # Code of operations to perform.  (1=sc,2=trans,3=rot).
+my @blockBorder;# Two sets of coordinates (xyz or abc) defining a block.
+my @sphereLoc;  # Location of the sphere used to cut atoms (abc or xyz).
+my $targetAtom; # Coordinates of the sphere defined by an atom at that site.
+my $sphereRad;  # Radius of the sphere used to cut atoms.
+my $zone;       # Either "in" or "out" for region to cut.  Defaut is "in".
+my $abcxyzFlag; # 0 indicates that abc coordinates are given, 1 is for xyz.
+my @minDistFilter; # Distance within which to filter.
+my $operation;
+
+# Initialize the environment.
+&initEnv;
+
+# Read the command line parameters.
+&parseCommandLine;
+
+# Set the lattice vector orientations according to the command line.
+StructureControl::setABCXYZAssignmentOrder(\@abc,\@xyz);
+
+# Read the input file.
+StructureControl::readInputFile($inFile,1);
+
+# Loop through all operations and apply them.
+foreach my $op (1..$numOps)
+{
+   if ($ops[$op] == 1)
+      {StructureControl::applySupercell(@{$sc[$op]}[1..3],
+                                        @{$mirror[$op]}[1..3]);}
+   elsif ($ops[$op] == 2)
+      {StructureControl::translateAtoms(\@{$trans[$op]});}
+   elsif ($ops[$op] == 3)
+      {StructureControl::rotateAllAtoms(\@{$rotOrig[$op]},\@{$rot[$op]},
+                                        $rotAngle[$op]);}
+   elsif ($ops[$op] == 4)
+      {StructureControl::applyFilter($minDistFilter[$op]);}
+   elsif ($ops[$op] == 5)
+      {StructureControl::insertVacuum($vacAxis[$op],$vacAmt[$op]);}
+   elsif ($ops[$op] == 6)
+      {StructureControl::makeOrtho;}
+   elsif ($ops[$op] == 7)
+      {StructureControl::applyPerturbation($maxPertMag[$op]);}
+   elsif ($ops[$op] == 8)
+      {StructureControl::prepSurface(\@{$hkl[$op]});}
+   elsif ($ops[$op] == 9)
+      {StructureControl::cutBlock($zone,$abcxyzFlag,\@blockBorder);}
+   elsif ($ops[$op] == 10)
+      {StructureControl::cutSphere($zone,$abcxyzFlag,$targetAtom,$sphereRad,
+                                  \@sphereLoc);}
+}
+
+open(OUT,">$outFile");
+StructureControl::printOLCAO(\*OUT,$title,"cart");
+
+###############################################
+# End program execution #######################
+###############################################
+
+sub initEnv
+{
+   my $hostname;
+
+   $hostname = `uname -n`;
+   chomp $hostname;
+
+   # Initialize the input and output files to their default values.
+   $inFile  = "olcao.skl";
+   $outFile = "olcao.skl.new";
+
+   # Create an initial title based on the current location and the machine name.
+   $title = `pwd`;
+   chomp $title;
+   $title = $hostname . $title;
+
+   # Initialize the order of axis assignment.
+   $abc[1] = 1; $abc[2] = 2; $abc[3] = 3;
+   $xyz[1] = 1; $xyz[2] = 2; $xyz[3] = 3;
+
+   # Initialize the number of operations to do to zero.
+   $numOps = 0;
+}
+
+sub parseCommandLine
+{
+   # Declare local variables
+   my $number;
+   my $argument;
+   my $normalizer;
+   my $commandLine = "command";
+
+   # Initialize the index counter for the command line parameters.
+   $number=0;
+
+   # Loop through the command line parameters checking for each option.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-i")
+         {$inFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-o")
+         {$outFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-t")
+         {$title = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-abcxyz")
+      {
+         $abc[1] = $ARGV[++$number];
+         $xyz[1] = $ARGV[++$number];
+         $abc[2] = $ARGV[++$number];
+         $xyz[2] = $ARGV[++$number];
+         $abc[3] = abs($abc[1]+$abc[2]-6);  # |1+2-6|=3; |1+3-6|=2; |2+3-6|=1
+         $xyz[3] = abs($xyz[1]+$xyz[2]-6);  # |1+2-6|=3; |1+3-6|=2; |2+3-6|=1
+      }
+      elsif ($ARGV[$number] eq "-sc")
+      {
+         $ops[++$numOps] = 1;
+         $sc[$numOps][1] = $ARGV[++$number];
+         $sc[$numOps][2] = $ARGV[++$number];
+         $sc[$numOps][3] = $ARGV[++$number];
+         $mirror[$numOps][1] = $ARGV[++$number];
+         $mirror[$numOps][2] = $ARGV[++$number];
+         $mirror[$numOps][3] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-trans")
+      {
+         $ops[++$numOps] = 2;
+         $trans[$numOps][1] = $ARGV[++$number];
+         $trans[$numOps][2] = $ARGV[++$number];
+         $trans[$numOps][3] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-rotA")
+      {
+         $ops[++$numOps] = 3;
+         $rot[$numOps][1] = $ARGV[++$number];
+         $rot[$numOps][2] = $ARGV[++$number];
+         $rot[$numOps][3] = $ARGV[++$number];
+         $rotAngle[$numOps] = $ARGV[++$number] * $pi/180.0; # Convert to Rad.
+
+         # Make the rotation normal vector a unit vector.
+         $normalizer = sqrt($rot[$numOps][1]**2 + $rot[$numOps][2]**2 +
+               $rot[$numOps][3]**2);
+         $rot[$numOps][1] /= $normalizer;
+         $rot[$numOps][2] /= $normalizer;
+         $rot[$numOps][3] /= $normalizer;
+
+         # Assume that the origin for the axis of rotation is the origin.
+         $rotOrig[$numOps][1] = 0.0;
+         $rotOrig[$numOps][2] = 0.0;
+         $rotOrig[$numOps][3] = 0.0;
+
+         # Assume that the model does not already adhere to periodic boundary
+         #   conditions. (It is a molecule in a big empty box or something like
+         #   that.) Thus, if something is rotated outside of the cell, it
+         #   *will* be *simply* reset, shifted, and then re-rotated to put
+         #   whatever part rotated outside the cell back into the cell (but
+         #   -using periodic boundary conditions- back on the other side of
+         #   the cell.) Yeah, confusing. It still uses PBCs when the model
+         #   is representing something that doesn't need PBCs.
+
+         # Look through the other possible sub-options and act accordingly.
+         foreach my $suboption (1..2)
+         {
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-orig"))
+            {
+               $number++;
+               $rotOrig[$numOps][1] = $ARGV[++$number];
+               $rotOrig[$numOps][2] = $ARGV[++$number];
+               $rotOrig[$numOps][3] = $ARGV[++$number];
+            }
+         }
+      }
+      elsif ($ARGV[$number] eq "-rotP")
+      {
+         $ops[++$numOps] = 3; # Note that this is the same operation as -rotA.
+         $p1[1] = $ARGV[++$number];
+         $p1[2] = $ARGV[++$number];
+         $p1[3] = $ARGV[++$number];
+         $p2[1] = $ARGV[++$number];
+         $p2[2] = $ARGV[++$number];
+         $p2[3] = $ARGV[++$number];
+         $p3[1] = $ARGV[++$number];
+         $p3[2] = $ARGV[++$number];
+         $p3[3] = $ARGV[++$number];
+
+         # Find the axis of rotation.
+         @{$rot[$numOps]} = StructureControl::getPlaneNormal(\@p1,\@p2,\@p3);
+
+         # Make the rotation normal vector a unit vector.
+         $normalizer = sqrt($rot[$numOps][1]**2 + $rot[$numOps][2]**2 +
+               $rot[$numOps][3]**2);
+         $rot[$numOps][1] /= $normalizer;
+         $rot[$numOps][2] /= $normalizer;
+         $rot[$numOps][3] /= $normalizer;
+
+         # Assume that the angle for this operation is going to be the angle
+         #   between the 2nd and 3rd points. Note that rotations are positive
+         #   in the counterclockwise direction.
+         $rotAngle[$numOps] = -90.0 + atan2($p3[3] - $p2[3],
+               sqrt(($p3[1]-$p2[1])**2 + ($p3[2]-$p2[2])**2))*180.0/$pi;
+
+         # Assume that the origin for the axis of rotation is the origin.
+         $rotOrig[$numOps][1] = 0.0;
+         $rotOrig[$numOps][2] = 0.0;
+         $rotOrig[$numOps][3] = 0.0;
+
+         # Look through the other possible sub-options and act accordingly.
+         foreach my $suboption (1..3)
+         {
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-angle"))
+            {
+               $number++;
+               $rotAngle[$numOps] = $ARGV[++$number];
+            }
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-orig"))
+            {
+               $number++;
+               $rotOrig[$numOps][1] = $ARGV[++$number];
+               $rotOrig[$numOps][2] = $ARGV[++$number];
+               $rotOrig[$numOps][3] = $ARGV[++$number];
+            }
+         }
+
+         # Demand that the angle is in radians.
+         $rotAngle[$numOps] *= $pi/180.0;
+      }
+      elsif ($ARGV[$number] eq "-rothkl")
+      {
+         $ops[++$numOps] = 8;
+         $hkl[$numOps][1] = $ARGV[++$number];
+         $hkl[$numOps][2] = $ARGV[++$number];
+         $hkl[$numOps][3] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-filter")
+      {
+         $ops[++$numOps] = 4;
+         $minDistFilter[$numOps] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-addvac")
+      {
+         $ops[++$numOps] = 5;
+         $vacAxis[$numOps] = $ARGV[++$number];
+         $vacAmt[$numOps]  = $ARGV[++$number];
+         if ($vacAxis[$numOps] eq "a")
+            {$vacAxis[$numOps] = 1;}
+         elsif ($vacAxis[$numOps] eq "b")
+            {$vacAxis[$numOps] = 2;}
+         elsif ($vacAxis[$numOps] eq "c")
+            {$vacAxis[$numOps] = 3;}
+         else
+            {die "Unacceptable axis specification.  Need a, b, or c.\n";}
+      }
+      elsif ($ARGV[$number] eq "-cutblock")
+      {
+         $ops[++$numOps] = 9;
+
+         # Assume that the zone is "in".
+         $zone = 0;
+
+         foreach my $suboption (1..3)
+         {
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-zone"))
+            {
+               $zone = $ARGV[$number+2];
+               if ($zone eq "in")
+                  {$zone = 0;}
+               elsif ($zone eq "out")
+                  {$zone = 1;}
+
+               $number += 2;
+            }
+
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-xyz"))
+            {
+               $abcxyzFlag = 1;
+               $blockBorder[1][1] = $ARGV[$number+2];
+               $blockBorder[1][2] = $ARGV[$number+3];
+               $blockBorder[2][1] = $ARGV[$number+4];
+               $blockBorder[2][2] = $ARGV[$number+5];
+               $blockBorder[3][1] = $ARGV[$number+6];
+               $blockBorder[3][2] = $ARGV[$number+7];
+
+               $number += 7;
+            }
+
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-abc"))
+            {
+               $abcxyzFlag = 0;
+               $blockBorder[1][1] = $ARGV[$number+2];
+               $blockBorder[1][2] = $ARGV[$number+3];
+               $blockBorder[2][1] = $ARGV[$number+4];
+               $blockBorder[2][2] = $ARGV[$number+5];
+               $blockBorder[3][1] = $ARGV[$number+6];
+               $blockBorder[3][2] = $ARGV[$number+7];
+
+               $number += 7;
+            }
+         }
+      }
+      elsif ($ARGV[$number] eq "-cutsphere")
+      {
+         $ops[++$numOps] = 10;
+
+         # Assume that the zone is "in".
+         $zone = 0;
+
+         # Assume that we will not target a particular atomic site.
+         $targetAtom = 0;
+
+         foreach my $suboption (1..3)
+         {
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-zone"))
+            {
+               $zone = $ARGV[$number+2];
+               if ($zone eq "in")
+                  {$zone = 0;}
+               elsif ($zone eq "out")
+                  {$zone = 1;}
+
+               $number += 2;
+            }
+
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-radius"))
+            {
+               $sphereRad = $ARGV[$number+2];
+               $number += 2;
+            }
+
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-atom"))
+            {
+               $targetAtom = $ARGV[$number+2];
+               $number += 2;
+            }
+
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-atxyz"))
+            {
+               $abcxyzFlag = 1;
+               $sphereLoc[1] = $ARGV[$number+2];
+               $sphereLoc[2] = $ARGV[$number+3];
+               $sphereLoc[3] = $ARGV[$number+4];
+
+               $number += 4;
+            }
+
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-atabc"))
+            {
+               $abcxyzFlag = 0;
+               $sphereLoc[1] = $ARGV[$number+2];
+               $sphereLoc[2] = $ARGV[$number+3];
+               $sphereLoc[3] = $ARGV[$number+4];
+
+               $number += 4;
+            }
+         }
+      }
+      elsif ($ARGV[$number] eq "-ortho")
+         {$ops[++$numOps] = 6;}
+      elsif ($ARGV[$number] eq "-perturb")
+      {
+         $ops[++$numOps] = 7;
+         $maxPertMag[$numOps] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "modStruct ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}

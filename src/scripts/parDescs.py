@@ -101,7 +101,7 @@ class procDescriptor(object):
     def calcProcGrid(self):
         if (self.mpisize > 1):
             self.prows = int(m.sqrt(self.mpisize))
-            self.pcols = int(self.mpisize // self.prows))
+            self.pcols = int(self.mpisize // self.prows)
         else:
             self.prows = 1
             self.pcols = 1

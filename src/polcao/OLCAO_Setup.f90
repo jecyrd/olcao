@@ -19,9 +19,8 @@ subroutine setupSCF
    use O_ElectroStatics,      only: makeElectrostatics
    use O_GaussianRelations,   only: makeAlphaDist, makeAlphaNucDist, &
                                   & makeAlphaPotDist, cleanUpGaussRelations
-   use O_IntegralsSCF,        only: allocateIntegralsSCF, gaussOverlapOL, &
-                                  & gaussOverlapKE, gaussOverlapNP, &
-                                  & elecPotGaussOverlap, cleanUpIntegralsSCF
+   use O_IntegralsSCF,        only: gaussOverlapOL, gaussOverlapKE, &
+                                    & gaussOverlapNP, elecPotGaussOverlap
    use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
    use O_PotSites,    only: cleanUpPotSites

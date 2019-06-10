@@ -830,7 +830,7 @@ subroutine gaussOverlapKE(blcsinfo, cvOLArrayInfo, atomList)
       ! First we must make a correction for the atom 2 lattice origin shift.
       call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
             & latticeVector,numKPoints,0)
-      call saveCurrentPair(i,j,numKPoints,currentPair,vvArrayInfo, &
+      call saveCurrentPair(i,j,numKPoints,currentPair,blcsinfo,vvArrayInfo, &
             & ccArrayInfo, cvArrayInfo)
 #else
       call saveCurrentPairGamma(i,j,currentPairGamma,&
@@ -967,7 +967,7 @@ subroutine gaussOverlapNP(blcsinfo, cvOLArrayInfo, atomList)
    type(ArrayInfo) :: vvArrayInfo
    type(ArrayInfo) :: cvArrayInfo
    type(ArrayInfo) :: ccArrayInfo
-   type(AtomPair), pointer :: currAtomPair => nul()
+   type(AtomPair), pointer :: currAtomPair => null()
 
    ! Record the beginning of this phase of the setup calculation.
    call timeStampStart (10)
@@ -1284,7 +1284,8 @@ end subroutine gaussOverlapNP
 ! Electronic Potential three center overlap integrals.
 subroutine gaussOverlapEP(blcsInfo,cvOLArrayInfo, atomList, &
       & potDim,currAlphaNumber,currPotElement,currPotNumber,currMultiplicity, &
-      & currPotAlpha,currPotTypeNumber)
+      & currPotAlpha,currPotTypeNumber,anyElecPotInteraction,matrixIndex, &
+      & cellIndex,elecPotInteraction,hsize_t_bitsize)
 
    ! Import necessary modules.
    use O_Kinds
@@ -1319,6 +1320,12 @@ subroutine gaussOverlapEP(blcsInfo,cvOLArrayInfo, atomList, &
    integer, intent(in) :: currMultiplicity
    integer, intent(in) :: currPotTypeNumber
    real (kind=double), intent(in) :: currPotAlpha
+   integer (hsize_t), allocatable, dimension(:,:,:) :: anyElecPotInteraction
+   integer :: matrixIndex
+   integer :: cellIndex
+   integer :: elecPotInteraction
+   integer, intent(in)  :: hsize_t_bitsize ! used to access any bit 
+                                           ! in the above array
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
@@ -1495,7 +1502,8 @@ subroutine gaussOverlapEP(blcsInfo,cvOLArrayInfo, atomList, &
          ! For the electronic potential we have one more test to prevent
          !   other potential terms of the current potential type from
          !   passing this point.
-         if (checkElecPotInteraction(i,j,k) == 1) then
+         if (checkElecPotInteraction(i,j,k,matrixIndex, &
+            & cellIndex,hsize_t_bitsize,anyElecPotInteraction) == 1) then
             cycle
          else
             ! Assume now that this alpha will not have any interactions
@@ -1609,7 +1617,9 @@ subroutine gaussOverlapEP(blcsInfo,cvOLArrayInfo, atomList, &
                call electronicPE (contrib,alphaIndex,currentElements,&
                      & currentlmAlphaIndex,shiftedAtomSiteSep,&
                      & currentPosition,shiftedAtomPos,oneAlphaPair,&
-                     & currentAlphas)
+                     & currentAlphas,currAlphaNumber,currPotElement, &
+                     & currMultiplicity,currPotNumber,currPotAlpha, &
+                     & elecPotInteraction)
 
                ! Collect the results of the overlap of the current alpha
                !   times the basis functions of atom 2.
@@ -1741,6 +1751,7 @@ subroutine elecPotGaussOverlap(blcsinfo,cvOLArrayInfo,atomList)
    type(AtomPair), pointer :: atomList
 
    ! Define local variables.
+   integer :: elecPotInteraction
    integer :: numAlphas
    integer :: currPotNumber
    integer :: currPotElement
@@ -1748,9 +1759,10 @@ subroutine elecPotGaussOverlap(blcsinfo,cvOLArrayInfo,atomList)
    integer :: currMultiplicity
    integer :: currPotTypeNumber
    real (kind=double) :: currPotAlpha
-
-   ! Define local variables that are extracted from the passed data structures
-   integer :: numAlphas
+   integer (hsize_t), allocatable, dimension(:,:,:) :: anyElecPotInteraction
+   integer :: hsize_t_bitsize ! used to access any bit in the above array
+   integer :: matrixIndex
+   integer :: cellIndex
 
    ! Define local variables for logging and loop control
    integer :: i,j ! Loop index variables
@@ -1814,7 +1826,9 @@ subroutine elecPotGaussOverlap(blcsinfo,cvOLArrayInfo,atomList)
          !   with all the alphas of every pair of atoms.
          call gaussOverlapEP(blcsinfo,cvOLArrayInfo,atomList,potDim, &
                & currAlphaNumber,currPotElement,currPotNumber, &
-               & currMultiplicity,currPotAlpha,currPotTypeNumber)
+               & currMultiplicity,currPotAlpha,currPotTypeNumber, &
+               & anyElecPotInteraction,matrixIndex,cellIndex, &
+               & elecpotInteraction,hsize_t_bitsize)
 
          ! Record that this loop has finished
          if (mod(currentIterCount,10) .eq. 0) then
@@ -1838,7 +1852,8 @@ subroutine elecPotGaussOverlap(blcsinfo,cvOLArrayInfo,atomList)
 end subroutine elecPotGaussOverlap
 
 
-function checkElecPotInteraction (i,j,k)
+function checkElecPotInteraction (i,j,k, matrixIndex, cellIndex, &
+      & hsize_t_bitsize, anyElecPotInteraction)
 
    ! Make sure no funny variables are used.
    implicit none
@@ -1847,6 +1862,11 @@ function checkElecPotInteraction (i,j,k)
    integer, intent (in) :: i ! Index for atom loop 1.
    integer, intent (in) :: j ! Index for atom loop 2.
    integer, intent (in) :: k ! Index for current superlattice cell.
+   integer, intent (inout) :: matrixIndex
+   integer, intent (inout) :: cellIndex
+   integer (hsize_t), allocatable, dimension(:,:,:) :: anyElecPotInteraction
+   integer, intent(in)  :: hsize_t_bitsize ! used to access any bit 
+                                           ! in the above array
 
    ! Define the function return variable.
    integer :: checkElecPotInteraction
@@ -2052,7 +2072,8 @@ end subroutine nuclearPE
 
 subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
       & shiftedAtomSiteSep,currentPosition,shiftedAtomPos,oneAlphaPair,&
-      & currentAlphas)
+      & currentAlphas,currAlphaNumber,currPotElement,currMultiplicity, &
+      & currPotNumber,currPotAlpha, elecPotInteraction)
 
    ! Use necessary modules
    use O_Kinds
@@ -2076,6 +2097,10 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
    real (kind=double), dimension (dim3),   intent (in)  :: shiftedAtomPos
    real (kind=double), dimension (16,16),  intent (out) :: oneAlphaPair
    real (kind=double), dimension (:,:),    intent (in)  :: currentAlphas
+   integer, intent(in) :: currAlphaNumber, currPotElement
+   integer, intent(in) :: currMultiplicity, currPotNumber
+   real (kind=double), intent(in) :: currPotAlpha
+   integer, intent(inout) :: elecPotInteraction
 
    ! Define variables for gauss integrals
    integer :: l1l2Switch
@@ -2240,13 +2265,13 @@ subroutine orthoOL(vvInfo,ccInfo,cvOLInfo,blcsinfo,potDim)
    type(ArrayInfo) :: vcInfo
    type(ArrayInfo) :: tArrInfo
    type(BlacsInfo) :: tBlcsInfo
-   integer :: dcout, mpidtype, mpierr
-   integer, dimension(7) :: sdaya
+   integer :: dcount, mpidtype, mpierr
+   integer, dimension(7) :: sdata
 
    ! Setup the local array info for the valeCore matrix formed by the
    !    conjugate transpose of cvOL
    call setupArrayDesc(vcInfo,blcsinfo,valeDim,coreDim,numKPoints)
-   call pcatrans(cvOLInfo,vcInfo)
+   call pctrans(cvOLInfo,vcInfo)
 
    ! Setup the local array info for the temporary valeCore matrixed used in
    !    these subroutines
@@ -2335,13 +2360,13 @@ subroutine orthoOL(vvInfo,ccInfo,cvOLInfo,blcsinfo,potDim)
                  & blcsinfo%mpisize/)
          call MPI_Send(sdata,7,MPI_INTEGER,0,0,MPI_COMM_WORLD,mpierr)
 
-         dcout=size(vvInfo%local,1)*size(vvInfo%local,2)*size(vvInfo%local,3)
+         dcount=size(vvInfo%local,1)*size(vvInfo%local,2)*size(vvInfo%local,3)
 
          ! Now we can send the bulk of the data
          call MPI_Send(vvInfo%local,dcount,mpidtype,0,0,MPI_COMM_WORLD,mpierr)
 
       ! Process zero receives array and writes to disk
-      else if (blcsinfo%mpiRank == 0) then
+      elseif (blcsinfo%mpiRank == 0) then
          ! First receive information about the process and local array
          call MPI_Recv(sdata,7,MPI_INTEGER,i,0,MPI_COMM_WORLD,mpistatus,mpierr)
 
@@ -2408,14 +2433,14 @@ subroutine ortho (opCode,vvInfo,ccInfo,cvInfo,cvOLInfo,blcsInfo,potDim, &
    type(ArrayInfo) :: vcTempInfo
    type(ArrayInfo) :: vcInfo
    type(ArrayInfo) :: tArrInfo
-   type(ArrayInfo) :: tBlcsInfo 
+   type(BlacsInfo) :: tBlcsInfo 
    integer :: dcount, mpidtype, mpierr
    integer, dimension(7) :: sdata
 
    ! Setup the local array info for the valeCore matrix formed by the
    !    conjugate transpose of cvOL
    call setupArrayDesc(vcInfo,blcsinfo,valeDim,coreDim,numKPoints)
-   call pctranse(cvOLInfo,vcInfo)
+   call pctrans(cvOLInfo,vcInfo)
 
    ! Setup the local array info for the temporary valeCore matrix used in these
    !    subroutines.
@@ -2514,7 +2539,7 @@ subroutine ortho (opCode,vvInfo,ccInfo,cvInfo,cvOLInfo,blcsInfo,potDim, &
          dcount=size(vvInfo%local,1)*size(vvInfo%local,2)*size(vvInfo%local,3)
 
          ! Now we can send the bulk of the data
-         call MPI_Send(vvInfo%lcoal,dcount,mpidtype,0,0,MPI_COMM_WORLD, mpierr)
+         call MPI_Send(vvInfo%local,dcount,mpidtype,0,0,MPI_COMM_WORLD, mpierr)
 
       ! Process zero receives array and writes to disk
       else if (blcsInfo%mpiRank == 0) then
@@ -2545,3 +2570,5 @@ subroutine ortho (opCode,vvInfo,ccInfo,cvInfo,cvOLInfo,blcsInfo,potDim, &
    enddo
 
 end subroutine ortho
+
+end module O_IntegralsSCF

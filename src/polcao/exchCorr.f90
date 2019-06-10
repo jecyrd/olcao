@@ -823,9 +823,12 @@ subroutine makeECMeshAndOverlap
             call MPI_RECV (numPoints,1,MPI_INTEGER,j,1,MPI_COMM_WORLD, &
                & mpistatus, mpierr)
 
-            call h5dwrite_f(numPoints_did(mpi_i),H5_NATIVE_INTEGER, &
+            call h5dwrite_f(numPoints_did(mpi_i),H5T_NATIVE_INTEGER, &
                & numRayPoints,numPoints,hdferr)
-            if (hdferr /= 0) stop 'Failed to write num ray points. Proc:',j
+            if (hdferr /= 0) then
+               write(20,*) 'Failed to write num ray points. Proc:',j
+               stop
+            endif
 
             ! Receive the radial weights for those ray points and write to disk.
             call MPI_RECV (radialWeight(1:numPoints(1)),mpipoints, &
@@ -833,7 +836,10 @@ subroutine makeECMeshAndOverlap
 
             call h5dwrite_f(radialWeight_did(mpi_i),H5T_NATIVE_DOUBLE, &
                & radialWeight(:),points,hdferr)
-            if (hdferr /= 0) stop 'Failed to write radial weights, Proc:',j
+            if (hdferr /= 0) then
+               write(20,*) 'Failed to write radial weights, Proc:',j
+               stop
+            endif
 
             ! Receive the exchRhoOp from process j and write to disk.
             call MPI_RECV (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
@@ -842,7 +848,10 @@ subroutine makeECMeshAndOverlap
 
             call h5dwrite_f(exchRhoOp_did(mpi_i), H5T_NATIVE_DOUBLE, &
                & exchRhoOp(:,:,:),potPoints,hdferr)
-            if (hdferr /= 0) stop 'Failed to write exchRhoOp. Proc:',j
+            if (hdferr /= 0) then 
+               write(20,*) 'Failed to write exchRhoOp. Proc:',j
+               stop
+            endif
          enddo
       else
 

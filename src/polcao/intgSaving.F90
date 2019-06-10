@@ -62,7 +62,7 @@ subroutine applyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,statesDim2,&
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_KPoints, only: numKPoints
+   use O_KPoints, only: numKPoints, phaseFactor
    use O_AtomicTypes, only: maxNumStates
 
    ! Make sure no funny variables are defined accidentally.
@@ -116,9 +116,10 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
 
    ! Import the necessary modules
    use O_Kinds
+   use O_Parallel
 
    ! Import the necessary data modules
-   use O_KPoints, only: kPoints
+   use O_KPoints, only: kPoints, phaseFactor
    use O_AtomicTypes, only: maxNumStates
 
    ! Make sure that there are not accidental variable declarations.
@@ -162,11 +163,13 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
 end subroutine kPointLatticeOriginShift
 
 
-subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsInfo, vvInfo, &
+subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsinfo, vvInfo, &
       & ccInfo, cvInfo)
 
    ! Import the necessary modules
    use O_Kinds
+   
+   use O_Parallel
 
    ! Import the necessary data modules
    use O_KPoints, only: numKPoints
@@ -181,7 +184,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsInfo, vvInfo, &
    integer, intent(in) :: kPointCount
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
          & numKPoints), intent(inout) :: currentPair
-   type(BlacsInfo), intent(in) :: blcsInfo
+   type(BlacsInfo), intent(in) :: blcsinfo
    type(ArrayInfo), intent(inout) :: vvInfo, ccInfo, cvInfo
 
    ! Define the matrix necessary for quickly accessing the complex conjugate
@@ -241,7 +244,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsInfo, vvInfo, &
    ! Save the overlap from the core of atom 1 with the valence of atom 2.
    !   This code is basically a replication of the old code.
    call atomAtomSaving ( (/coreStateIndex(1),valeStateIndex(2)/), &
-      & (coreStateNum(1),valeStateNum(2))&
+      & (/coreStateNum(1),valeStateNum(2)/), &
       & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1), &
       & 1:valeStateNum(2),:), &
       & cvInfo, blcsinfo) 
@@ -288,7 +291,7 @@ subroutine atomAtomSaving(stateIndex, stateNum, cpair, localArr, blcsinfo)
    ! Define passed parameters
    integer, dimension (2), intent(in) :: stateIndex
    integer, dimension (2), intent(in) :: stateNum
-   complex (kind=double), dimension(:,:), intent(in) :: cpair
+   complex (kind=double), dimension(:,:,:), intent(in) :: cpair
    type(ArrayInfo), intent(inout) :: localArr
    type(BlacsInfo), intent(in) :: blcsinfo
 
@@ -299,8 +302,8 @@ subroutine atomAtomSaving(stateIndex, stateNum, cpair, localArr, blcsinfo)
    integer :: x,y
    integer :: a,b
 
-   do i=1,len(cpair,1)
-      do j=1,len(cpair,2)
+   do i=1,size(cpair,1)
+      do j=1,size(cpair,2)
          ! Calculate the pr and pc of the element, and make sure it belongs
          ! to this process.
          pr = mod((stateIndex(1)+i-1)/localArr%mb, blcsinfo%prows)
@@ -317,7 +320,7 @@ subroutine atomAtomSaving(stateIndex, stateNum, cpair, localArr, blcsinfo)
             a = l*localArr%mb + x
             b = j*localArr%nb + y
 
-            localArr%local(a,b,:) = currentPair(i,j,:)
+            localArr%local(a,b,:) = cpair(i,j,:)
          endif
       enddo
    enddo

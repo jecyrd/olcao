@@ -63,7 +63,7 @@ subroutine neutralAndNuclearQPot
    use O_Potential, only: potDim
 
    ! Import external subroutines.
-   use O_MathSubs, only: erf
+   use O_MathSubs
 
    ! Import necessary modules for parallel
    use MPI
@@ -319,7 +319,7 @@ subroutine neutralAndNuclearQPot
    !    to compute the current status of a number of variables *as if* the
    !    algorithm had been running in serial. In the future, this should be
    !    replaced with a direct and intelligent assingment.
-   if (minSize > 1) then
+   if (minSite > 1) then
       do i=1,minsite-1
          if (potSites(i)%firstPotType == 1) then
             ! Assign local copies of the potential type based variables.
@@ -673,7 +673,7 @@ subroutine neutralAndNuclearQPot
       call MPI_REDUCE(MPI_IN_PLACE,localNeutQPot(:,:),potDim*potDim, &
             & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
    else
-      call MPI_REDUCE(localNeutQPot(:,:),localNeutQPot(:,:),potDim*potDi, &
+      call MPI_REDUCE(localNeutQPot(:,:),localNeutQPot(:,:),potDim*potDim, &
             & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
    endif
 
@@ -691,7 +691,7 @@ subroutine neutralAndNuclearQPot
       call MPI_REDUCE(MPI_IN_PLACE,localNucQPot(:),potDim, &
             & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
    else
-      call MPI_REDUCE(localNucQPot(:),potDim, &
+      call MPI_REDUCE(localNucQPot(:),localNucQPot(:),potDim, &
             & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
    endif
 
@@ -752,11 +752,11 @@ subroutine residualQ
    use O_Potential, only: potDim
 
    ! Import external subroutines.
-   use O_MathSubs, only: erf
+   use O_MathSubs
 
    ! Import parallel modules
    use MPI
-   use O_ParallelSetup, only: localBalMPi
+   use O_ParallelSetup, only: loadBalMPi
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -895,14 +895,14 @@ subroutine residualQ
             ! Establish the beginning and ending indices for the set of
             !   alphas (potential terms) that we are dealing with out of
             !   all of the alphas in the whole system.
-            initAlphasIndex = finAlphasIndex
-            finAlphasIndex  = finAlphasIndex + currentNumAlphas(1)
+            initAlphaIndex = finAlphaIndex
+            finAlphaIndex  = finAlphaIndex + currentNumAlphas(1)
 
             if (lastElement /= currentElement) then
                do j=1,currentNumAlphas(1)
                   ! Get the potential alpha overlap between the current alpha
                   !    and the minimal potential alphas of the whole system.
-                  minReducedAlpha = currentAlphas(j,1) * minPotAlphas / &
+                  minReducedAlpha = currentAlphas(j,1) * minPotAlpha / &
                         & (currentAlphas(j,1) + minPotAlpha)
 
                   ! Square root of the above

@@ -233,7 +233,7 @@ module O_LAPACKDPOSVX
 
    contains
 
-subroutine solveDPOSVX (N, NRHS, A, LD, B)
+subroutine solveDPOSVX (N, NRHS, A, LD, B, INFO)
 
    ! Use necessary modules.
    use O_Kinds
@@ -245,6 +245,7 @@ subroutine solveDPOSVX (N, NRHS, A, LD, B)
    integer, intent(IN) :: N
    integer, intent(IN) :: NRHS
    integer, intent(IN) :: LD
+   integer, intent(OUT) :: INFO
    real (kind=double), dimension (LD,N), intent(IN)  :: A
    real (kind=double), dimension (LD,NRHS), intent(INOUT)  :: B
 
@@ -258,7 +259,6 @@ subroutine solveDPOSVX (N, NRHS, A, LD, B)
    real (kind=double), allocatable, dimension (:,:) :: resultMatrix
    real (kind=double), allocatable, dimension (:,:) :: factor
    integer, allocatable, dimension (:) :: integerWorkSpace
-   integer :: info
 
    ! Allocate space to hold the working arrays.
    allocate (scaleFactor(N))
@@ -273,10 +273,10 @@ subroutine solveDPOSVX (N, NRHS, A, LD, B)
          & resultMatrix,LD,conditionNumber,forwardError,backwardError,&
          & realWorkSpace,integerWorkSpace,info)
 
-   if (info /= 0) then
-      write (20, *) 'dposvx failed. INFO= ', info
-      stop
-   endif
+   !if (info /= 0) then
+   !   write (20, *) 'dposvx failed. INFO= ', info
+   !   stop
+   !endif
 
    ! Recover the solution into the given B matrix.
    B(:,:) = resultMatrix(:,:)

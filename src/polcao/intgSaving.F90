@@ -22,20 +22,21 @@ subroutine multWithBasisFn1 (currentBasisFns,pairXBasisFn2,pairXBasisFn12,&
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_AtomicTypes
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define variables passed to this subroutine
    real (kind=double), dimension (maxNumAtomAlphas,&
-         & maxNumStates,2) :: currentBasisFns
+         & maxNumStates,2), intent(in) :: currentBasisFns
    real (kind=double), dimension (16,maxNumAtomAlphas,&
-         & maxNumStates) :: pairXBasisFn2
-   real (kind=double), dimension (maxNumStates,maxNumStates) :: pairXBasisFn12
-   integer, dimension (maxNumStates,2)  :: currentlmIndex
-   integer, dimension(2) :: currentNumTotalStates
-   integer :: maxAlpha1Used
+         & maxNumStates), intent(in) :: pairXBasisFn2
+   real (kind=double), dimension (maxNumStates,maxNumStates), &
+         & intent(inout) :: pairXBasisFn12
+   integer, dimension (maxNumStates,2), intent(in)  :: currentlmIndex
+   integer, dimension(2), intent(in) :: currentNumTotalStates
+   integer, intent(in) :: maxAlpha1Used
 
    ! Define local variables
    integer :: l,m
@@ -61,21 +62,22 @@ subroutine applyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,statesDim2,&
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_KPoints
-   use O_AtomicTypes
+   use O_KPoints, only: numKPoints
+   use O_AtomicTypes, only: maxNumStates
 
    ! Make sure no funny variables are defined accidentally.
    implicit none
 
    ! Define the variables passed to this subroutine
-   integer :: statesDim1
-   integer :: statesDim2
+   integer, intent(in) :: statesDim1
+   integer, intent(in) :: statesDim2
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & numKPoints) :: currentPair
-   real (kind=double), dimension (statesDim1,statesDim2) :: pairXBasisFn12
-   integer :: k ! Cell loop index
-   integer :: runCode
-   integer :: currentKPoint  ! Only used for runCode>0
+         & numKPoints), intent(inout) :: currentPair
+   real (kind=double), dimension (statesDim1,statesDim2), &
+         & intent(in) :: pairXBasisFn12
+   integer, intent(in) :: k ! Cell loop index
+   integer, intent(in) :: runCode
+   integer, intent(in) :: currentKPoint  ! Only used for runCode>0
 
    ! Define the local variables
    integer :: l,m,n
@@ -116,19 +118,19 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_KPoints
-   use O_AtomicTypes
+   use O_KPoints, only: kPoints
+   use O_AtomicTypes, only: maxNumStates
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define variables passed to this subroutine
-   integer, dimension(2) :: currentNumTotalStates
-   integer :: KPointCount
+   integer, dimension(2), intent(in) :: currentNumTotalStates
+   integer, intent(in) :: KPointCount
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & kPointCount) :: currentPair
-   real (kind=double), dimension (3) :: latticeVector
-   integer :: kPointIndex
+         & kPointCount), intent(inout) :: currentPair
+   real (kind=double), dimension (3), intent(in) :: latticeVector
+   integer, intent(in) :: kPointIndex
 
    ! Define local variables for loop control.
    integer :: i,j,k
@@ -160,28 +162,27 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
 end subroutine kPointLatticeOriginShift
 
 
-subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
-      & valeVale,coreVale,coreCore)
+subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsInfo, vvInfo, &
+      & ccInfo, cvInfo)
 
    ! Import the necessary modules
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_KPoints
-   use O_AtomicTypes
-   use O_AtomicSites
+   use O_KPoints, only: numKPoints
+   use O_AtomicTypes, only: maxNumStates, atomTypes
+   use O_AtomicSites, only: valeDim, coreDim, atomSites
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define the variables passed to this subroutine.
-   integer :: i,j  ! Atom1 and Atom2
-   integer :: kPointCount
+   integer, intent(in) :: i,j  ! Atom1 and Atom2
+   integer, intent(in) :: kPointCount
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & numKPoints) :: currentPair
-   complex (kind=double), dimension (valeDim,valeDim,numKPoints) :: valeVale
-   complex (kind=double), dimension (coreDim,valeDim,numKPoints) :: coreVale
-   complex (kind=double), dimension (coreDim,coreDim,numKPoints) :: coreCore
+         & numKPoints), intent(inout) :: currentPair
+   type(BlacsInfo), intent(in) :: blcsInfo
+   type(ArrayInfo), intent(inout) :: vvInfo, ccInfo, cvInfo
 
    ! Define the matrix necessary for quickly accessing the complex conjugate
    !   of the currentPair.
@@ -209,10 +210,6 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
    do kPointCounter = 1, kPointCount
       currentPairDagger(:,:,kPointCounter) = &
             & transpose(conjg(currentPair(:,:,kPointCounter)))
-!      currentPairDagger(1:valeStateNum(2)+coreStateNum(2),1:valeStateNum(1) + &
-!            & coreStateNum(1),i) = &
-!            & transpose(conjg(currentPair(1:valeStateNum(1)+coreStateNum(1),&
-!            & 1:valeStateNum(2)+coreStateNum(2),i)))
    enddo
 
    ! Get the indices for where the states for these atoms should begin to
@@ -225,8 +222,9 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
 
    ! Save the valence valence part.  The upper triangle contains the real
    !   part while the strict lower triangle contains the imaginary part.
-   call valeValeSaving (i,j,kPointCount,valeStateIndex,valeStateNum,&
-         & valeVale,currentPair)
+   call atomAtomSaving (valeStateIndex, valeStateNum, &
+      & currentPair(1:valeStateNum(1),1:valeStateNum(2),:), &
+      & vvInfo, blcsinfo) 
 
    ! If there is no core contribution then we don't have to save any
    !   core parts.
@@ -242,176 +240,89 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
 
    ! Save the overlap from the core of atom 1 with the valence of atom 2.
    !   This code is basically a replication of the old code.
-   call coreValeSaving (kPointCount,valeStateIndex,valeStateNum,&
-         & coreStateIndex,coreStateNum,coreVale,currentPair,currentPairDagger)
+   call atomAtomSaving ( (/coreStateIndex(1),valeStateIndex(2)/), &
+      & (coreStateNum(1),valeStateNum(2))&
+      & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1), &
+      & 1:valeStateNum(2),:), &
+      & cvInfo, blcsinfo) 
 
    ! Now we do the Core Core part just the same as we did for the Vale
    !   Vale part.  The only difference is the shift of valeStateNum(:)
    !   in determining the start and end points of the matrix to copy.
 
    if ((coreStateNum(1) == 0) .or. (coreStateNum(2) == 0)) return
+   
+   call atomAtomSaving (coreStateIndex, coreStateNum, &
+      & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1), &
+      & valeStateNum(2)+1:valeStateNum(2)+coreStateNum(2),:), &
+      & ccInfo, blcsinfo) 
 
-   call coreCoreSaving (i,j,kPointCount,valeStateNum,coreStateIndex,&
-         & coreStateNum,coreCore,currentPair,currentPairDagger)
 
    ! Deallocate the dagger of the current pair since it is no longer needed.
    deallocate (currentPairDagger)
-   
+
 end subroutine saveCurrentPair
 
+! We're going to do this potentially one of the worst scaling ways. But we can
+! optimize later if it's not working well for us.
+!
+! For each element in the currentPair, we will calculate the index the, process
+! coordinates, local block and, index of the local array that the element should
+! be at. Then we will store it in the local array, and disregard any elements
+! that don't belong specifically to this process.
+!
+! Our first global index is given by stateIndex, and the number of states is
+! given by stateNum. This with the data contained in blcsinfo, and localArr
+! should be enough information to calculate the location of each element.
+subroutine atomAtomSaving(stateIndex, stateNum, cpair, localArr, blcsinfo)
 
-
-subroutine valeValeSaving (atom1,atom2,kPointCount,valeStateIndex,valeStateNum,&
-      & valeVale,currentPair)
-
-   ! Import the necessary modules
+   ! Import necessary modules
    use O_Kinds
 
-   ! Import the necessary data modules.
-   use O_KPoints
-   use O_AtomicTypes
-   use O_AtomicSites
-
-   ! Make sure that there are not accidental variable declarations.
+   use O_Parallel
+   use O_ParallelSetup
+   
    implicit none
+   !currentPair(1:valeStateNum(1),1:valeStateNum(2),i),&
+   
+   ! Define passed parameters
+   integer, dimension (2), intent(in) :: stateIndex
+   integer, dimension (2), intent(in) :: stateNum
+   complex (kind=double), dimension(:,:), intent(in) :: cpair
+   type(ArrayInfo), intent(inout) :: localArr
+   type(BlacsInfo), intent(in) :: blcsinfo
 
-   ! Define variables passed to this subroutine
-   integer :: atom1
-   integer :: atom2
-   integer :: kPointCount
-   integer, dimension (2) :: valeStateIndex
-   integer, dimension (2) :: valeStateNum
-   complex (kind=double), dimension (valeDim,valeDim,numKPoints) :: valeVale
-   complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & numKPoints) :: currentPair
+   ! Define local variables
+   integer :: i,j
+   integer :: pr, pc
+   integer :: l,m
+   integer :: x,y
+   integer :: a,b
 
-   ! Define local variables for loop control and tracking.
-   integer :: i,j,k
+   do i=1,len(cpair,1)
+      do j=1,len(cpair,2)
+         ! Calculate the pr and pc of the element, and make sure it belongs
+         ! to this process.
+         pr = mod((stateIndex(1)+i-1)/localArr%mb, blcsinfo%prows)
+         pc = mod((stateIndex(2)+j-1)/localArr%nb, blcsinfo%pcols)
+         if ( (pr == blcsinfo%myprow) .and. (pc == blcsinfo%mypcol) ) then
+            ! Calculate the local block(l,m), position in local block (x,y), 
+            ! and then the position in the local matrix (a,b). Then store the 
+            ! element.
+            l = (stateIndex(1)+i-1)/(blcsinfo%prows * localArr%mb)
+            m = (stateIndex(2)+j-1)/(blcsinfo%pcols * localArr%nb)
+            x = mod(stateIndex(1)+i-1,localArr%mb)+1
+            y = mod(stateIndex(2)+j-1,localArr%nb)+1
+            
+            a = l*localArr%mb + x
+            b = j*localArr%nb + y
 
-   if (atom1 == atom2) then
-      do i = 1, kPointCount
-         valeVale(valeStateIndex(1)+1:valeStateIndex(1)+valeStateNum(1),&
-               & valeStateIndex(2)+1:valeStateIndex(2)+valeStateNum(2),i) = &
-               & currentPair(1:valeStateNum(1),1:valeStateNum(2),i)
-         do j = valeStateIndex(1)+1,valeStateIndex(1)+valeStateNum(1)
-            do k = j+1,valeStateIndex(2)+valeStateNum(2)
-               valeVale(k,j,i) = (0.0_double,0.0_double)
-            enddo
-         enddo
+            localArr%local(a,b,:) = currentPair(i,j,:)
+         endif
       enddo
-   else
-      do i = 1, kPointCount
-         valeVale(valeStateIndex(1)+1:valeStateIndex(1)+valeStateNum(1),&
-               & valeStateIndex(2)+1:valeStateIndex(2)+valeStateNum(2),i) = &
-               & currentPair(1:valeStateNum(1),1:valeStateNum(2),i)
-      enddo
-   endif
-
-end subroutine valeValeSaving
-
-
-
-subroutine coreValeSaving (kPointCount,valeStateIndex,valeStateNum,&
-      & coreStateIndex,coreStateNum,coreVale,currentPair,currentPairDagger)
-
-   ! Import the necessary modules
-   use O_Kinds
-
-   ! Import the necessary data modules.
-   use O_KPoints
-   use O_AtomicTypes
-   use O_AtomicSites
-
-   ! Make sure that there are not accidental variable declarations.
-   implicit none
-
-   ! Define variables passed to this subroutine
-   integer :: kPointCount
-   integer, dimension (2) :: valeStateIndex
-   integer, dimension (2) :: valeStateNum
-   integer, dimension (2) :: coreStateIndex
-   integer, dimension (2) :: coreStateNum
-   complex (kind=double), dimension (coreDim,valeDim,numKPoints) :: coreVale
-   complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & numKPoints) :: currentPair
-   complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & numKPoints) :: currentPairDagger
-
-   ! Define local variables for loop control.
-   integer :: i
-
-   ! Note the slightly tricky aspect of this action. At this point the
-   !   currentPair holds integrals between two atoms (i,j). The problem is that
-   !   when constructing the coreVale matrix we only have the core_i integrals
-   !   with the valence_j in the correct orientation in currentPair. The core_j
-   !   and valence_i orbitals are cc-transposed. Thus, to store the core_j and
-   !   valence_i we take values from the currentPairDagger.
-
-   if (coreStateNum(1) /= 0) then
-      do i = 1, kPointCount
-         coreVale(coreStateIndex(1)+1:coreStateIndex(1)+coreStateNum(1),&
-               & valeStateIndex(2)+1:valeStateIndex(2)+valeStateNum(2),i) = &
-               & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1),&
-               & 1:valeStateNum(2),i)
-      enddo
-   endif
-   if (coreStateNum(2) /= 0) then
-      do i = 1, kPointCount
-         coreVale(coreStateIndex(2)+1:coreStateIndex(2)+coreStateNum(2),&
-               & valeStateIndex(1)+1:valeStateIndex(1)+valeStateNum(1),i) = &
-               & currentPairDagger(valeStateNum(2)+1:valeStateNum(2)+&
-               & coreStateNum(2),1:valeStateNum(1),i)
-      enddo
-   endif
-
-end subroutine coreValeSaving
-
-
-subroutine coreCoreSaving (atom1,atom2,kPointCount,valeStateNum,&
-      & coreStateIndex,coreStateNum,coreCore,currentPair,currentPairDagger)
-
-   ! Import the necessary modules
-   use O_Kinds
-
-   ! Import the necessary data modules.
-   use O_KPoints
-   use O_AtomicTypes
-   use O_AtomicSites
-
-   ! Make sure that there are not accidental variable declarations.
-   implicit none
-
-   ! Define variables passed to this subroutine
-   integer :: atom1
-   integer :: atom2
-   integer :: kPointCount
-   integer, dimension (2) :: valeStateNum
-   integer, dimension (2) :: coreStateIndex
-   integer, dimension (2) :: coreStateNum
-   complex (kind=double), dimension (coreDim,coreDim,numKPoints) :: coreCore
-   complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & numKPoints) :: currentPair
-   complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & numKPoints) :: currentPairDagger
-
-   ! Define local variables for loop control.
-   integer :: i
-
-   do i = 1, kPointCount
-      coreCore(coreStateIndex(1)+1:coreStateIndex(1)+coreStateNum(1),&
-            & coreStateIndex(2)+1:coreStateIndex(2)+coreStateNum(2),i) = &
-            & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1),&
-            & valeStateNum(2)+1:valeStateNum(2)+coreStateNum(2),i)
-      if (atom1 .ne. atom2) then
-         coreCore(coreStateIndex(2)+1:coreStateIndex(2)+coreStateNum(2),&
-               & coreStateIndex(1)+1:coreStateIndex(1)+coreStateNum(1),i)=&
-               & currentPairDagger(valeStateNum(2)+1:valeStateNum(2)+ &
-               & coreStateNum(2),valeStateNum(1)+1:valeStateNum(1)+ &
-               & coreStateNum(1),i)
-      endif
    enddo
 
-end subroutine coreCoreSaving
+end subroutine atomAtomSaving
 
 #else
 
@@ -422,17 +333,19 @@ subroutine applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12,statesDim1,&
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_AtomicTypes
+   use O_AtomicTypes, only: maxNumStates
 
    ! Make sure no funny variables are defined
    implicit none
 
    ! Define the variables passed to this subroutine
-   integer :: statesDim1
-   integer :: statesDim2
-   real (kind=double), dimension (maxNumStates,maxNumStates) :: currentPairGamma
-   real (kind=double), dimension (statesDim1,statesDim2) :: pairXBasisFn12
-   integer :: runCode
+   integer, intent(in) :: statesDim1
+   integer, intent(in) :: statesDim2
+   real (kind=double), dimension (maxNumStates,maxNumStates), &
+         & intent(inout) :: currentPairGamma
+   real (kind=double), dimension (statesDim1,statesDim2), &
+         & intent(in) :: pairXBasisFn12
+   integer, intent(in) :: runCode
 
    if (runCode <= 2) then
       currentPairGamma(:statesDim1,:statesDim2) = &
@@ -447,26 +360,33 @@ subroutine applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12,statesDim1,&
 
 end subroutine applyPhaseFactorsGamma
 
-subroutine saveCurrentPairGamma (i,j,currentPairGamma,&
-      & valeValeGamma,coreValeGamma,coreCoreGamma)
+subroutine saveCurrentPairGamma (i,j,currentPairGamma,descriptVV,descriptCC,&
+      & descriptCV,descriptVC,localVV,localCC,localCV,localVC,&
+      & currentNumTotalStates)
 
    ! Import the necessary modules
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_KPoints
-   use O_AtomicTypes
-   use O_AtomicSites
+   use O_AtomicTypes, only: maxNumStates, atomTypes
+   use O_AtomicSites, only: coreDim, valeDim, atomSites
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define the variables passed to this subroutine.
-   integer :: i,j ! Atom1 and Atom2
-   real (kind=double), dimension (maxNumStates,maxNumStates) :: currentPairGamma
-   real (kind=double), dimension (valeDim,valeDim) :: valeValeGamma
-   real (kind=double), dimension (coreDim,valeDim) :: coreValeGamma
-   real (kind=double), dimension (coreDim,coreDim) :: coreCoreGamma
+   integer, intent(in) :: i,j ! Atom1 and Atom2
+   real (kind=double), dimension (maxNumStates,maxNumStates), &
+         & intent(in) :: currentPairGamma
+   integer, dimension(9), intent(in) :: descriptVV
+   integer, dimension(9), intent(in) :: descriptCC
+   integer, dimension(9), intent(in) :: descriptCV
+   integer, dimension(9), intent(in) :: descriptVC
+   real (kind=double), dimension (:,:,:), intent(inout) :: localVV
+   real (kind=double), dimension (:,:,:), intent(inout) :: localCC
+   real (kind=double), dimension (:,:,:), intent(inout) :: localCV
+   real (kind=double), dimension (:,:,:), intent(inout) :: localVC
+   integer, dimension(2), intent(in) :: currentNumTotalStates
 
    ! Define the matrix for quickly accessing the transpose of the currentPair.
    real (kind=double), allocatable, dimension (:,:) :: currentPairGammaTranspose
@@ -488,10 +408,6 @@ subroutine saveCurrentPairGamma (i,j,currentPairGamma,&
    ! Create the transpose of the relevant currentPairGamma section.
    allocate (currentPairGammaTranspose(maxNumStates,maxNumStates))
    currentPairGammaTranspose = transpose(currentPairGamma)
-!   currentPairGammaTranspose(1:valeStateNum(2)+coreStateNum(2),&
-!         & 1:valeStateNum(1)+coreStateNum(1)) = &
-!         & transpose(currentPairGamma(1:valeStateNum(1)+coreStateNum(1),&
-!         & 1:valeStateNum(2)+coreStateNum(2)))
 
    ! Get the indices for where the states for these atoms should begin to
    !   be recorded in the core containing matrices.  Also get the number
@@ -504,7 +420,7 @@ subroutine saveCurrentPairGamma (i,j,currentPairGamma,&
    ! Save the valence valence part.  The upper triangle contains the real
    !   part while the strict lower triangle contains the imaginary part.
    call valeValeSavingGamma (i,j,valeStateIndex,valeStateNum,&
-         & valeValeGamma,currentPairGamma)
+         & currentPairGamma,currentPairGammaTranspose,descriptVV,localVV)
 
    ! If there is no core contribution then we don't have to save any
    !   core parts.
@@ -521,8 +437,8 @@ subroutine saveCurrentPairGamma (i,j,currentPairGamma,&
    ! Save the overlap from the core of atom 1 with the valence of atom 2.
    !   This code is basically a replication of the old code.
    call coreValeSavingGamma (valeStateIndex,valeStateNum,&
-         & coreStateIndex,coreStateNum,coreValeGamma,currentPairGamma,&
-         & currentPairGammaTranspose)
+         & coreStateIndex,coreStateNum,currentPairGamma,&
+         & currentPairGammaTranspose,descriptCV,descriptVC,localCV,localVC)
 
    ! Now we do the Core Core part just the same as we did for the Vale
    !   Vale part.  The only difference is the shift of valeStateNum(:)
@@ -531,8 +447,8 @@ subroutine saveCurrentPairGamma (i,j,currentPairGamma,&
    if ((coreStateNum(1) == 0) .or. (coreStateNum(2) == 0)) return
 
    call coreCoreSavingGamma (i,j,valeStateNum,coreStateIndex,&
-         & coreStateNum,coreCoreGamma,currentPairGamma,&
-         & currentPairGammaTranspose)
+         & coreStateNum,currentPairGamma,currentPairGammaTranspose,descriptCC,&
+         & localCC)
 
    ! Deallocate the transpose of the current pair since it is no longer needed.
    deallocate (currentPairGammaTranspose)
@@ -542,126 +458,195 @@ end subroutine saveCurrentPairGamma
 
 
 subroutine valeValeSavingGamma (atom1,atom2,valeStateIndex,valeStateNum,&
-      & valeValeGamma,currentPairGamma)
+      & currentPairGamma,currentPairGammaTranspose,descriptVV,localVV)
 
 
    ! Import the necessary modules
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_AtomicTypes
-   use O_AtomicSites
+   use O_AtomicTypes, only: maxNumStates
+   use O_AtomicSites, only: valeDim
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define variables passed to this subroutine
-   integer :: atom1
-   integer :: atom2
-   integer, dimension (2) :: valeStateIndex
-   integer, dimension (2) :: valeStateNum
-   real (kind=double), dimension (valeDim,valeDim) :: valeValeGamma
+   integer, intent(in) :: atom1
+   integer, intent(in) :: atom2
+   integer, dimension (2), intent(in) :: valeStateIndex
+   integer, dimension (2), intent(in) :: valeStateNum
    real (kind=double), dimension (maxNumStates,&
-         & maxNumStates) :: currentPairGamma
+         & maxNumStates), intent(in) :: currentPairGamma
+   real (kind=double), dimension (maxNumStates,&
+         & maxNumStates), intent(in) :: currentPairGammaTranspose
+   integer, dimension(9), intent(in) :: descriptVV
+   real (kind=double), dimension (:,:,:), intent(inout) :: localVV
 
    ! Define local variables for loop control and tracking.
    integer :: i,j
+   integer, dimension(2) :: startIndices
+   integer, dimension(2) :: endIndices
+   integer, dimension(2) :: transStart
+   integer, dimension(2) :: transEnd
+   integer, dimension(2) :: ldReal
+   integer, dimension(2) :: ldRealTrans
+
+   startIndices(1) = valeStateIndex(1)+1
+   startIndices(2) = valeStateIndex(2)+1
+   endIndices(1) = valeStateIndex(1)+valeStateNum(1)
+   endIndices(2) = valeStateIndex(2)+valeStateNum(2)
+   transStart(1) = startIndices(2)
+   transStart(2) = startIndices(1)
+   transEnd(1) = endIndices(2)
+   transEnd(2) = endIndices(1)
+   ldReal(1) = valeStateNum(1)
+   ldReal(2) = valeStateNum(2)
+   ldRealTrans(1) = valeStateNum(2)
+   ldRealTrans(2) = valeStateNum(1)
 
    if (atom1 == atom2) then
-      valeValeGamma(valeStateIndex(1)+1:valeStateIndex(1)+valeStateNum(1),&
-            & valeStateIndex(2)+1:valeStateIndex(2)+valeStateNum(2)) = &
-            & currentPairGamma(1:valeStateNum(1),1:valeStateNum(2))
-      do i = valeStateIndex(1)+1,valeStateIndex(1)+valeStateNum(1)
-         do j = i+1,valeStateIndex(2)+valeStateNum(2)
-            valeValeGamma(j,i) = 0.0_double
-         enddo
-      enddo
+      ! Plop the full matrix on the diagonal.
+       call ga_put(ga_vv(1), startIndices(1),endIndices(1),&
+             & startIndices(2), endIndices(2), &
+             & currentPairGamma(1:valeStateNum(1),1:valeStateNum(2)),&
+             & ldReal(1))
    else
-      valeValeGamma(valeStateIndex(1)+1:valeStateIndex(1)+valeStateNum(1),&
-            & valeStateIndex(2)+1:valeStateIndex(2)+valeStateNum(2)) = &
-            & currentPairGamma(1:valeStateNum(1),1:valeStateNum(2))
+      ! First save to top half
+      call ga_put(ga_vv(1),startIndices(1),endIndices(1), &
+            & startIndices(2),endIndices(2), &
+            & currentPairGamma(1:valeStateNum(1),1:valeStateNum(2),i),&
+            & ldReal(1))
+
+      ! Put the transpose into the lower half
+      call ga_put(ga_vv(1),transStart(1),transEnd(1), &
+            & transStart(2),transEnd(2), &
+            & currentPairGammaTranspose(1:valeStateNum(2),1:valeStatenum(1)),&
+            & ldRealTrans(1))
    endif
 end subroutine valeValeSavingGamma
 
 
 
 subroutine coreValeSavingGamma (valeStateIndex,valeStateNum,&
-      & coreStateIndex,coreStateNum,coreValeGamma,currentPairGamma,&
-      & currentPairGammaTranspose)
+      & coreStateIndex,coreStateNum,currentPairGamma,&
+      & currentPairGammaTranspose,descriptCV,descriptVC,localCV,localVC)
 
    ! Import the necessary modules
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_AtomicTypes
-   use O_AtomicSites
+   use O_AtomicTypes, only: maxNumStates
+   use O_AtomicSites, only: coreDim, valeDim
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define variables passed to this subroutine
-   integer, dimension (2) :: valeStateIndex
-   integer, dimension (2) :: valeStateNum
-   integer, dimension (2) :: coreStateIndex
-   integer, dimension (2) :: coreStateNum
-   real (kind=double), dimension (coreDim,valeDim) :: coreValeGamma
+   integer, dimension (2), intent(in) :: valeStateIndex
+   integer, dimension (2), intent(in) :: valeStateNum
+   integer, dimension (2), intent(in) :: coreStateIndex
+   integer, dimension (2), intent(in) :: coreStateNum
    real (kind=double), dimension (maxNumStates,&
-         & maxNumStates) :: currentPairGamma
+         & maxNumStates), intent(in) :: currentPairGamma
    real (kind=double), dimension (maxNumStates,&
-         & maxNumStates) :: currentPairGammaTranspose
+         & maxNumStates), intent(in) :: currentPairGammaTranspose
+   integer, dimension(9), intent(in) :: descriptCV
+   integer, dimension(9), intent(in) :: descriptVC
+   real (kind=double), dimension (:,:,:), intent(inout) :: localCV
+   real (kind=double), dimension (:,:,:), intent(inout) :: localVC
+
+   ! Define local variables for loop control.
+   integer :: i
+   integer, dimension(2) :: startIndices
+   integer, dimension(2) :: endIndices
+   integer, dimension(2) :: transStart
+   integer, dimension(2) :: transEnd
+   integer, dimension(2) :: ldReal
+   integer, dimension(2) :: ldRealTrans
+
+   startIndices(1) = coreStateIndex(1)+1
+   startIndices(2) = valeStateIndex(2)+1
+
+   endIndices(1) = coreStateIndex(1) + coreStateNum(1)
+   endIndices(2) = valeStateIndex(2) + valeStateNum(2)
+
+   transStart(1) = coreStateIndex(2)+1
+   transStart(2) = valeStateIndex(1)+1
+
+   transEnd(1) = coreStateIndex(2)+coreStateNum(2)
+   transEnd(2) = valeStateIndex(1)+valeStateNum(1)
+
+   ldReal(1) = endIndices(1)-startIndices(1)+1
+   ldReal(2) = endIndices(2)-startIndices(2)+1
+
+   ldRealTrans(1) = transEnd(1)-transStart(1)+1
+   ldRealTrans(2) = transEnd(2)-transStart(2)+1
 
    if (coreStateNum(1) .ne. 0) then
-      coreValeGamma(coreStateIndex(1)+1:coreStateIndex(1)+coreStateNum(1),&
-            & valeStateIndex(2)+1:valeStateIndex(2)+valeStateNum(2)) = &
-            & currentPairGamma(valeStateNum(1)+1:&
-            & valeStateNum(1)+coreStateNum(1),1:valeStateNum(2))
+      call ga_put(ga_cv(1),startIndices(1),endIndices(1),&
+            & startIndices(2), endIndices(2),&
+            & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1),&
+            & 1:valeStateNum(2),i),ldReal(1))
    endif
    if (coreStateNum(2) .ne. 0) then
-      coreValeGamma(coreStateIndex(2)+1:coreStateIndex(2)+coreStateNum(2),&
-            & valeStateIndex(1)+1:valeStateIndex(1)+valeStateNum(1)) = &
-            & currentPairGammaTranspose(valeStateNum(2)+1:valeStateNum(2) + &
-            & coreStateNum(2),1:valeStateNum(1))
+      call ga_put(ga_cv(1),transStart(1),transEnd(1),&
+            & transStart(2), transEnd(2), &
+            & currentPairGammaTranspose(valeStateNum(2)+1:valeStateNum(2)+&
+            & coreStateNum(2),1:valeStateNum(1)), ldRealTrans(1))
    endif
+
 end subroutine coreValeSavingGamma
 
 
 
 subroutine coreCoreSavingGamma (atom1,atom2,valeStateNum,coreStateIndex,&
-      & coreStateNum,coreCoreGamma,currentPairGamma,currentPairGammaTranspose)
+      & coreStateNum,currentPairGamma,currentPairGammaTranspose,descriptCC,
+      & localCC)
 
    ! Import the necessary modules
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_AtomicTypes
-   use O_AtomicSites
+   use O_AtomicTypes, only: maxNumStates
+   use O_AtomicSites, only: coreDim
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define variables passed to this subroutine
-   integer :: atom1
-   integer :: atom2
-   integer, dimension (2) :: valeStateNum
-   integer, dimension (2) :: coreStateIndex
-   integer, dimension (2) :: coreStateNum
-   real (kind=double), dimension (coreDim,coreDim) :: coreCoreGamma
+   integer, intent(in) :: atom1
+   integer, intent(in) :: atom2
+   integer, dimension (2), intent(in) :: valeStateNum
+   integer, dimension (2), intent(in) :: coreStateIndex
+   integer, dimension (2), intent(in) :: coreStateNum
    real (kind=double), dimension (maxNumStates,&
-         & maxNumStates) :: currentPairGamma
+         & maxNumStates), intent(in) :: currentPairGamma
    real (kind=double), dimension (maxNumStates,&
-         & maxNumStates) :: currentPairGammaTranspose
+         & maxNumStates), intent(in) :: currentPairGammaTranspose
+   integer, dimension(9), intent(in) :: descriptCC
+   real (kind=double), dimension (:,:,:), intent(inout) :: localCC
 
+   ! Define local variables.
+   integer, dimension(2) :: startIndices
+   integer, dimension(2) :: endIndices
+   integer, dimension(2) :: transStart
+   integer, dimension(2) :: transEnd
+   integer, dimension(2) :: ldReal
+   integer, dimension(2) :: ldRealTrans
 
-   coreCoreGamma(coreStateIndex(1)+1:coreStateIndex(1)+coreStateNum(1),&
-         & coreStateIndex(2)+1:coreStateIndex(2)+coreStateNum(2)) = &
-         & currentPairGamma(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1),&
-         & valeStateNum(2)+1:valeStateNum(2)+coreStateNum(2))
+   call ga_put(ga_cc(1), startIndices(1),endIndices(1),&
+         & startIndices(2), endIndices(2), &
+         & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1),&
+         & valeStateNum(2)+1:valeStateNum(2)+coreStateNum(2)),ldReal(1))
    if (atom1 .ne. atom2) then
-      coreCoreGamma(coreStateIndex(2)+1:coreStateIndex(2)+coreStateNum(2), &
-            & coreStateIndex(1)+1:coreStateIndex(1)+coreStateNum(1)) = &
-            & currentPairGammaTranspose(valeStateNum(2)+1:valeStateNum(2) + &
-            & coreStateNum(2),valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1))
+      call ga_put(ga_cc(1),transStart(1),transEnd(1),&
+            & transStart(2),transEnd(2), &
+            & currentPairGammaTranspose(valeStateNum(2)+1:valeStateNum(2)+&
+            & coreStateNum(2),valeStateNum(1)+1:valeStateNum(1)+&
+            & coreStateNum(1)),ldRealTrans(1))
    endif
+
 end subroutine coreCoreSavingGamma
 
 #endif

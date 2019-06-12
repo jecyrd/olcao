@@ -664,7 +664,7 @@ subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
 
   integer(hid_t) :: memspace_dsid
   integer(hid_t), dimension(numKPoints,potDim) :: datasetToWrite_did
-  integer(hsize_t), dimension(3) ::hslabCount, hslabStart
+  integer(hsize_t), dimension(2) ::hslabCount, hslabStart
 
   real(kind=double), allocatable, dimension(:,:,:) :: dataOut
   real(kind=double) :: smallThresh10
@@ -683,10 +683,7 @@ subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
   end select
 
   ! Set the third component to numkp rather than setting in loop every time
-  hslabCount(3) = size(arrinfo%local,3)
-
-  ! Allocate space for single blocks
-  allocate(dataOut(arrinfo%mb, arrinfo%nb, hslabCount(3)))
+  !hslabCount(3) = size(arrinfo%local,3)
 
   do i=0,arrinfo%nrblocks-1
     do j=0,arrinfo%ncblocks-1
@@ -705,14 +702,17 @@ subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
         hslabCount(2) = arrinfo%nb
       endif
 
+      ! Allocate space for this exact block size
+      allocate(dataOut(hslabCount(1),hslabCount(2),size(arrinfo%local,3)))
+
       a = i*arrinfo%mb
       b = j*arrinfo%nb
       call localToGlobalMap(a,b, lo, hi, arrinfo, blcsinfo, 0)
-      hslabStart(1) = lo(1)
-      hslabStart(2) = lo(2)
-      hslabStart(3) = 1
+      hslabStart(1) = lo(1)-1
+      hslabStart(2) = lo(2)-1
+      !hslabStart(3) = 1
 
-      call h5screate_simple_f(3, hslabCount, memspace_dsid, hdferr)
+      call h5screate_simple_f(2, hslabCount, memspace_dsid, hdferr)
     
       ! Define hyperslab to be written to
       call h5sselect_hyperslab_f(valeVale_dsid, H5S_SELECT_SET_F, hslabStart, &
@@ -721,9 +721,9 @@ subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
       ! Need to prepare the data so that complex parts are on saved on the
       ! bottom half of matrix, and real parts on the top half.
       x=1
-      do k=hslabStart(1),(hslabStart(1)+hslabCount(1)-1)
+      do k=hslabStart(1)+1,(hslabStart(1)+hslabCount(1))
         y=1
-        do l=hslabStart(2),(hslabStart(2)+hslabCount(2)-1)
+        do l=hslabStart(2)+1,(hslabStart(2)+hslabCount(2))
           if (l>=k) then ! top half
             dataOut(x,y,:) = real(arrinfo%local(a+x,b+y,:))
           else ! Bottom half
@@ -739,22 +739,23 @@ subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
         case(1:3)
           ! write slab to disk
           call h5dwrite_f(datasetToWrite_did(kpl,1), H5T_NATIVE_DOUBLE, &
-            & dataOut(1:hslabCount(1),1:hslabCount(2),:), hslabCount, hdferr, &
+            & dataOut(:,:,kpl),hslabCount,hdferr, &
             & file_space_id=valeVale_dsid, mem_space_id=memspace_dsid)
         case(4)
           call h5dwrite_f(datasetToWrite_did( &
             & kpl,potTypes(currPotTypeNumber)%cumulAlphaSum+currAlphaNumber), &
-            H5T_NATIVE_DOUBLE, dataOut(1:hslabCount(1),1:hslabCount(2),:), &
+            H5T_NATIVE_DOUBLE, dataOut(:,:,kpl), &
             & hslabCount, hdferr, file_space_id=valeVale_dsid, &
             & mem_space_id=memspace_dsid)
         case default
           print *, "Something went very wrong in writeValeVale"
         end select
       enddo
+      
+      deallocate(dataOut)
     enddo
   enddo
 
-  deallocate(dataOut)
 
 end subroutine writeValeVale
 

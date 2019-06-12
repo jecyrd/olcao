@@ -117,10 +117,16 @@ subroutine setupSCF
    ! Now, the dimensions of the system are known.  Therefor we can
    !   initialize the HDF5 file structure format, and datasets.
    !   Only the process with mpirank==0 will need to open this file,
-   !   we will not do any parallel writes.
+   !   we will not do any parallel writes. However, all processes need to 
+   !   initialize the HDF5 interface so they can read the polcaoDistribution
+   !   file.
    if (mpiRank == 0) then
       call initSetupHDF5 (maxNumRayPoints)
+   else
+      call h5open_f(hdferr)
+      if (hdferr<0) stop 'Failed to open HDF library'
    endif
+
    ! Syncronize all processes
    call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
@@ -215,10 +221,11 @@ subroutine setupSCF
    close (20)
 
    ! Close the HDF5 interface.
-   if (mpiRank == 0) then
+   call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+   !if (mpiRank == 0) then
       call h5close_f (hdferr)
       if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
-   endif
+   !endif
 
    ! Open a file to signal completion of the program.
    if (mpiRank == 0) then

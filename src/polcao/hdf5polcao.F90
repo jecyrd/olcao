@@ -66,6 +66,8 @@ subroutine readGrid(atomPair_fid, pgrid)
   call h5dopen_f(atomPair_fid, "pgrid", atomPairPgrid_did, hdferr)
   if (hdferr /=0) stop 'Failed to open nprocs dataset.'
 
+  call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+
   dims(1) = 1
   call h5dread_f(atomPairNprocs_did, H5T_NATIVE_INTEGER, nprocs, dims, hdferr)
   if (hdferr /=0) stop 'Failed to read nprocs.'

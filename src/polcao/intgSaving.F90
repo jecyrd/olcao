@@ -318,7 +318,7 @@ subroutine atomAtomSaving(stateIndex, stateNum, cpair, localArr, blcsinfo)
             y = mod(stateIndex(2)+j-1,localArr%nb)+1
             
             a = l*localArr%mb + x
-            b = j*localArr%nb + y
+            b = m*localArr%nb + y
 
             localArr%local(a,b,:) = cpair(i,j,:)
          endif

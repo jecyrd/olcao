@@ -1715,7 +1715,7 @@ subroutine gaussOverlapEP(blcsInfo,cvOLArrayInfo, atomList, &
    !   done, and specifically that the result is for the electronic potential
    !   and that it should be written to the EP portion of the hdf5 file.
    call ortho(4,vvArrayInfo,ccArrayInfo,cvArrayInfo,cvOLArrayInfo, &
-         & blcsinfo, potDim, 0, 0)
+         & blcsinfo, potDim, currPotTypeNumber, currAlphaNumber)
 
    ! Deallocate the local matrices
    call deallocLocalArray(vvArrayInfo)
@@ -2516,7 +2516,8 @@ subroutine ortho (opCode,vvInfo,ccInfo,cvInfo,cvOLInfo,blcsInfo,potDim, &
    call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
    if (blcsinfo%mpiRank == 0) then
       ! Write out Process 0's information
-      call writeValeVale(vvInfo,blcsInfo,numKPoints,potDim,0,0,1)
+      call writeValeVale(vvInfo,blcsInfo,numKPoints,potDim,&
+         & currPotTypeNumber,currAlphaNumber,opCode)
    endif
 
    call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
@@ -2562,7 +2563,8 @@ subroutine ortho (opCode,vvInfo,ccInfo,cvInfo,cvOLInfo,blcsInfo,potDim, &
          call MPI_Recv(tArrInfo%local,dcount,mpidtype,i,0,MPI_COMM_WORLD, &
                & mpistatus,mpierr)
 
-         call writeValeVale(tArrInfo,tBlcsInfo,numKPoints,potDim,0,0,1)
+         call writeValeVale(tArrInfo,tBlcsInfo,numKPoints,potDim, &
+            & currPotTypeNumber,currAlphaNumber,opCode)
          call deallocLocalArray(tArrInfo)
       endif
 

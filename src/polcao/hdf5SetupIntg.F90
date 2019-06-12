@@ -76,18 +76,18 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    character*30 :: currentName
 
    ! Initialize data structure dimensions.
-#ifndef GAMMA
-   atomDims(1) = 2 ! Real and imaginary are needed.
-#else
-   atomDims(1) = 1 ! Real needed only
-#endif
-   atomDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
+   ! These are the dimensions of any interaction matrix as stored on disk.
+   atomDims(1) = valeDim
+   atomDims(2) = valeDim
 
    ! Check that the chunk size is not too large (the assumption here is that
    !   the number being stored are 8 byte reals and that we should not go over
    !   2 billion bytes. Note that if x*y = >250M and we want a*b = 250M then
    !   the additional requirement x/y = a/b leads to b = sqrt(250M/>250M)*y.
    !   Thus a = 250M/b.
+   ! Note, in the future it may be better to set the chunking size, to the size
+   !   of the blocking factors for scalapack, as thats the maximum contiguous
+   !   block of data we'll have access to at any one moment.
    if (atomDims(1) * atomDims(2) > 250000000) then
       atomDimsChunk(2) = int(250000000/atomDims(1))
       atomDimsChunk(1) = atomDims(1)
@@ -198,12 +198,8 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
    character*30 :: currentName
 
    ! Initialize data structure dimensions.
-#ifndef GAMMA
-   atomDims(1) = 2 ! Real and imaginary are needed.
-#else
-   atomDims(1) = 1 ! Real needed only
-#endif
-   atomDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
+   atomDims(1) = valeDim
+   atomDims(2) = valeDim
 
    ! Open the Integral group within the setup HDF5 file.
    call h5gopen_f (setup_fid,"/atomIntgGroup",atomIntgGroup_gid,hdferr)

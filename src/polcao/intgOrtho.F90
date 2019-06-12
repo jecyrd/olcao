@@ -245,8 +245,8 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo,vvInfo, kp)
    !   character could be anything. But, be careful anyway. The documentation
    !   from IBM seems better: Search for Parallel ESSL.
    call pzherk('U','C',valeDim,coreDim,(-2.0_double,0.0_double),&
-         & cvOLInfo%local(:,:,kp), 0, 0, cvOLInfo%desc, &
-         & (1.0_double,0.0_double), vvInfo%local(:,:,kp), 0,0, vvInfo%desc)
+         & cvOLInfo%local(:,:,kp), 1, 1, cvOLInfo%desc, &
+         & (1.0_double,0.0_double), vvInfo%local(:,:,kp), 1,1, vvInfo%desc)
 
    ! For reference, the non-parallel approach would look like the following
    !   with (first) blas and (second) straight matmul:
@@ -279,8 +279,8 @@ subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo,kp)
    integer, intent(in) :: kp
 
    call pzher2k('U','C',valeDim,coreDim,(-1.0_double,0.0_double),&
-         & cvOLInfo%local(:,:,kp),0,0,cvOLInfo%desc,cvInfo%local(:,:,kp), &
-         & 0,0,cvInfo%desc,(1.0_double,0.0_double),vvInfo%local(:,:,kp),0,0, &
+         & cvOLInfo%local(:,:,kp),1,1,cvOLInfo%desc,cvInfo%local(:,:,kp), &
+         & 1,1,cvInfo%desc,(1.0_double,0.0_double),vvInfo%local(:,:,kp),1,1, &
          & vvInfo%desc)
 
    ! For reference, the non-parallel approach would look like the following
@@ -316,9 +316,9 @@ subroutine valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo,kp)
    ! Note that localVC_temp is the resultant matrix.
 
    call pzhemm ('R','U',valeDim,coreDim,(1.0_double,0.0_double),&
-         & ccInfo%local(:,:,kp) ,0,0,ccInfo%desc,vcInfo%local(:,:,kp),0,0, &
+         & ccInfo%local(:,:,kp) ,1,1,ccInfo%desc,vcInfo%local(:,:,kp),1,1, &
          & vcInfo%desc,(0.0_double,0.0_double),vcTempInfo%local(:,:,kp), &
-         & 0,0,vcTempInfo%desc)
+         & 1,1,vcTempInfo%desc)
 
 end subroutine valeCoreCoreCore
 
@@ -355,9 +355,9 @@ subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo,kp)
 
    ! Change to pzhemm
    call pzgemm ('N','N',valeDim,valeDim,coreDim,(1.0_double,0.0_double),&
-         & vcTempInfo%local(:,:,kp),0,0,vcTempInfo%desc, &
-         & cvInfo%local(:,:,kp),0,0,cvInfo%desc, (1.0_double,0.0_double), &
-         & vvInfo%local(:,:,kp),0,0,vvInfo%desc)
+         & vcTempInfo%local(:,:,kp),1,1,vcTempInfo%desc, &
+         & cvInfo%local(:,:,kp),1,1,cvInfo%desc, (1.0_double,0.0_double), &
+         & vvInfo%local(:,:,kp),1,1,vvInfo%desc)
 
    ! Eliminate all values in localVV that are less than 1e-10.
    if (negligLimit /= 0.0_double) then

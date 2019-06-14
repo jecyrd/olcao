@@ -121,10 +121,75 @@ end subroutine solveZHEGV
 
 end module O_LAPACKZHEGV
 
-module O_SCALAPACKZHEGV
+module O_SCALAPACKPZHEGVX
 
    ! Make sure nothing funny is declared by accident.
    implicit none
+
+   interface
+      subroutine pzhegvx(IBTYPE,JOBZ,RANGE,UPLO,N,A,IA,JA,DESCA,B,IB,JB,DESCB &
+            & VL,VU,IL,UI,ABSTOL,M,NZ,W,ORFAC,Z,IZ,JZ,DESCZ,WORK,LWORK,RWORK, &
+            & LRWORK,IWORK,LIWORK,IFAIL,ICLUSTR,GAP,INFO)
+         use O_KINDS
+         integer   :: IBTYPE
+         character :: JOBZ
+         character :: RANGE
+         character :: UPLO
+         integer   :: N
+         complex(kind=double), dimension() :: A
+         integer   :: IA
+         integer   :: JA
+         integer, dimension() :: DESCA
+         complex(kind=double), dimension() :: B
+         integer   :: IB
+         integer   :: JB
+         integer, dimension() :: DESCB
+         real(kind=double) :: VL
+         real(kind=double) :: VU
+         integer   :: IL
+         integer   :: IU
+         real(kind=double) :: ABSTOL
+         integer   :: M
+         integer   :: NZ
+         real(kind=double), dimension() :: W
+         real(kind=double) :: ORFAC
+         complex(kind=double), dimension() :: Z
+         integer   :: IZ
+         integer   :: JZ
+         integer, dimension() :: DESCZ
+         complex(kind=double) :: WORK
+         integer   :: LWORK
+         real(kind=double), dimension() :: RWORK
+         integer   :: LRWORK
+         integer, dimension() :: IWORK
+         integer   :: LIWORK
+         integer, dimension() :: IFAIL
+         integer, dimension() :: ICLUSTR
+         real(kind=double), dimension() :: GAP
+         integer   :: INFO
+      end subroutine pzhegvx
+   contains
+subroutine solvePZHEGVX(vvArr,vvOLArr,eVals,blcsinfo)
+
+   use O_Parallel
+
+   ! Make sure no funny varaibles are defined
+   implicit none
+
+   ! Define passed Parameters
+   type(ArrayInfo), intent(inout) :: vvArr
+   type(ArrayInfo), intent(inout) :: vvOLArr
+   type(ArrayInfo), intent(inout) :: eVals
+   type(BlacsInfo), intent(in) :: blcsinfo
+
+   ! Define local variables
+
+
+   call pzhegvx(1,'V','U',vvInfo%I,
+
+end subroutine solvePZHEGVX
+
+end module O_SCALAPACKZHEGVX
 
 
 

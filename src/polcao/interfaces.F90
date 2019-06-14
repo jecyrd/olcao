@@ -121,6 +121,8 @@ end subroutine solveZHEGV
 
 end module O_LAPACKZHEGV
 
+! Reference for this module: 
+!    http://www.netlib.org/scalapack/explore-html/d7/dff/pzhegvx_8f_source.html
 module O_SCALAPACKPZHEGVX
 
    ! Make sure nothing funny is declared by accident.
@@ -136,14 +138,14 @@ module O_SCALAPACKPZHEGVX
          character :: RANGE
          character :: UPLO
          integer   :: N
-         complex(kind=double), dimension() :: A
+         complex(kind=double), dimension(:,:) :: A
          integer   :: IA
          integer   :: JA
-         integer, dimension() :: DESCA
-         complex(kind=double), dimension() :: B
+         integer, dimension(9) :: DESCA
+         complex(kind=double), dimension(:,:) :: B
          integer   :: IB
          integer   :: JB
-         integer, dimension() :: DESCB
+         integer, dimension(9) :: DESCB
          real(kind=double) :: VL
          real(kind=double) :: VU
          integer   :: IL
@@ -151,26 +153,27 @@ module O_SCALAPACKPZHEGVX
          real(kind=double) :: ABSTOL
          integer   :: M
          integer   :: NZ
-         real(kind=double), dimension() :: W
+         real(kind=double), dimension(N) :: W
          real(kind=double) :: ORFAC
-         complex(kind=double), dimension() :: Z
+         complex(kind=double), dimension(:,:) :: Z
          integer   :: IZ
          integer   :: JZ
-         integer, dimension() :: DESCZ
+         integer, dimension(9) :: DESCZ
          complex(kind=double) :: WORK
          integer   :: LWORK
-         real(kind=double), dimension() :: RWORK
+         real(kind=double), dimension(:) :: RWORK
          integer   :: LRWORK
-         integer, dimension() :: IWORK
+         integer, dimension(:) :: IWORK
          integer   :: LIWORK
-         integer, dimension() :: IFAIL
-         integer, dimension() :: ICLUSTR
-         real(kind=double), dimension() :: GAP
+         integer, dimension(N) :: IFAIL
+         integer, dimension(:) :: ICLUSTR
+         real(kind=double), dimension(:) :: GAP
          integer   :: INFO
       end subroutine pzhegvx
    contains
 subroutine solvePZHEGVX(vvArr,vvOLArr,eVals,blcsinfo)
 
+   use O_Kinds
    use O_Parallel
 
    ! Make sure no funny varaibles are defined
@@ -182,10 +185,54 @@ subroutine solvePZHEGVX(vvArr,vvOLArr,eVals,blcsinfo)
    type(ArrayInfo), intent(inout) :: eVals
    type(BlacsInfo), intent(in) :: blcsinfo
 
-   ! Define local variables
+   ! Define local input variables
+   real(kind=double) :: VL,VU
+   integer :: IL, IU
+   real(kind=double) :: ABSTOL
+   real(kind=double) :: ORFAC
+
+   ! Define local output variables
+   integer :: M, NZ
+   real(kind=double), dimension(vvInfo%I) :: W
+   complex(kind=double), dimension(:,:) :: Z
+
+   ! Define local work variables
+   complex(kind=double) :: WORK
+   integer   :: LWORK
+   real(kind=double), dimension(:) :: RWORK
+   integer   :: LRWORK
+   integer, dimension(:) :: IWORK
+   integer   :: LIWORK
+
+   ! Define other local variables
+   integer, dimension(N) :: IFAIL
+   integer, dimension(:) :: ICLUSTR
+   real(kind=double), dimension(:) :: GAP
+   integer   :: INFO
+
+   ! Eigvenvalues will be computed most accurately when ABSTOL is set to twice
+   !   the underflow threshold 2*PDLAMCH('S') not zero.
+   ABSTOL = 2*PDLAMCH('S')
+
+   ! At the time of creation of this module not sure if the eigenvectors,
+   ! are required to be reorthogonalized, so we'll set ORFAC=0, and no
+   ! eigenvectors will be orthogonalized.
+   ORFAC = 0
+
+   ! LWORK when Eigenvectors are requested:
+   !  LWORK >= N + ( NP0 + MQ0 + NB ) * NB
+   ! where NQ0 = NUMROC( NN, NB, 0, 0, NPCOL)
+   ! For optimal performance
+
+   ! Because range=='A', VL, VU, IL, and IU will not be referenced.
+   call pzhegvx(1,'V','A',vvInfo%I,vvArr%local,1,1,vvArr%desc, &
+                                &  vvOLArr%local,1,1,vvOLArr%desc, &
+                                &  VL,VU,IL,IU,ABSTOL,M,NZ,W,ORFAC, &
+                                &  eVals%local,1,1,eVals%desc, &
+                                &  WORK,LWORK,RWORK,LRWORK,IWORK,LIWORK, &
+                                &  IFAIL, ICLUSTR, GAP, INFO)
 
 
-   call pzhegvx(1,'V','U',vvInfo%I,
 
 end subroutine solvePZHEGVX
 

@@ -121,6 +121,11 @@ end subroutine solveZHEGV
 
 end module O_LAPACKZHEGV
 
+module O_SCALAPACKZHEGV
+
+   ! Make sure nothing funny is declared by accident.
+   implicit none
+
 
 
 

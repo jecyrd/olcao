@@ -30,7 +30,7 @@ module O_SecularEquation
    contains
 
 
-subroutine secularEqnAllKP(spinDirection, numStates)
+subroutine secularEqnAllKP(spinDirection, numStates, vvArr, vvOLArr, blcsinfo)
 
    ! Import necessary modules.
    use HDF5
@@ -52,30 +52,24 @@ subroutine secularEqnAllKP(spinDirection, numStates)
          & unpackMatrixGamma
 #endif
 
+   use O_Parallel
+
    ! Make sure that no funny variables are defined.
    implicit none
 
    ! Define the passed parameters.
    integer :: spinDirection
    integer :: numStates
+   type(ArrayInfo) :: vvArr, vvOLArr
+   type(BlacsInfo) :: blcsinfo
 
    ! Define the local variables used in this subroutine.
    integer :: i,j ! Loop index variables
    integer :: hdferr
    integer :: dim1
-   real    (kind=double), allocatable, dimension (:,:)   :: packedValeVale
-   real    (kind=double), allocatable, dimension (:,:)   :: tempPackedValeVale
 
    ! Record the date and time that we start.
    call timeStampStart (15)
-
-   ! Initialize the dimension of the packed matrices to include two components
-   !   (real,imaginary) or just a real component.
-#ifndef GAMMA
-   dim1 = 2
-#else
-   dim1 = 1
-#endif
 
    ! Only allocate for first spin to prevent double allocation.  These arrays
    !   will be deallocated in the makeValenceRho subroutine to accomodate the
@@ -100,56 +94,35 @@ subroutine secularEqnAllKP(spinDirection, numStates)
 #else
    allocate(valeValeOLGamma    (valeDim,valeDim,spin)) ! Real
 #endif
-   allocate(packedValeVale     (dim1,valeDim*(valeDim+1)/2))
-   allocate(tempPackedValeVale (dim1,valeDim*(valeDim+1)/2))
-
 
    ! Begin loop over all kpoints.
    do i = 1,numKPoints
 
-      ! Prepare the matrices.
-      packedValeVale(:,:) = 0.0_double
-      tempPackedValeVale(:,:) = 0.0_double
-
 #ifndef GAMMA
-      valeValeOL(:,:,1,spinDirection)=cmplx(0.0_double,0.0_double,double)
-
-      valeVale(:,:,1,spinDirection) = cmplx(0.0_double,0.0_double,double)
+   ! nothing to do left as reminder for later
 #else
       valeValeGamma(:,:,spinDirection) = 0.0_double
       valeValeOLGamma(:,:,spinDirection) = 0.0_double
 #endif
 
       ! Read the nuclear potential term into packed hamiltonian.
-      call readPackedMatrix(atomNucOverlap_did(i),packedValeVale,&
-            & atomDims,dim1,valeDim)
+      call readPackedMatrix(atomNucOverlap_did(i),vvArr,blcsinfo)
 
       ! Read the kinetic energy term into the still packed hamiltonian.
-      call readPackedMatrixAccum(atomKEOverlap_did(i),packedValeVale,&
-            & tempPackedValeVale,atomDims,0.0_double,dim1,valeDim)
+      call readPackedMatrixAccum(atomKEOverlap_did(i),vvArr,blcsinfo,0.0_double)
 
       ! Read the atomic potential terms into the still packed hamiltonian.
       do j = 1, potDim
-         call readPackedMatrixAccum(atomPotOverlap_did(i,j),packedValeVale,&
-               & tempPackedValeVale,atomDims,potCoeffs(j,spinDirection),&
-               & dim1,valeDim)
+         call readPackedMatrixAccum(atomPotOverlap_did(i,j),arrInfo,blcsinfo,
+               & potCoeffs(j,spinDirection))
       enddo
 
-      ! Unpack the hamiltonian matrix.
-#ifndef GAMMA
-      call unpackMatrix(valeVale(:,:,1,spinDirection),packedValeVale,valeDim,0)
-#else
-      call unpackMatrixGamma(valeValeGamma(:,:,spinDirection),packedValeVale,&
-            & valeDim,0)
-#endif
-
       ! Read the atomic overlap matrix. 
-      call readPackedMatrix(atomOverlap_did(i),packedValeVale,&
-            & atomDims,dim1,valeDim)
+      call readPackedMatrix(atomOverlap_did(i),vvOLArr,blcsinfo)
 
       ! Unpack the overlap matrix.
 #ifndef GAMMA
-      call unpackMatrix(valeValeOL(:,:,1,1),packedValeVale,valeDim,0)
+   ! nothing to do left as reminder for later
 #else
       call unpackMatrixGamma(valeValeOLGamma(:,:,1),packedValeVale,valeDim,0)
 #endif

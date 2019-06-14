@@ -1,4 +1,4 @@
-module O_pOLCAOhdf5
+module O_pSetupHDF5
   ! Iport any necessary definition modules.
   
   ! Make sure that no funny variables are defined.
@@ -179,4 +179,4 @@ subroutine readAtomListHDF5(atomPair_fid, atomList)
 end subroutine readAtomListHDF5
 
 
-end module O_pOLCAOhdf5
+end module O_pSetupHDF5

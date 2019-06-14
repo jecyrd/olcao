@@ -20,7 +20,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
    use O_SecularEquation, only: secularEqnAllKP, cleanUpSecularEqn, &
                               & shiftEnergyEigenValues
    use O_ValeCharge,      only: makeValenceRho
-   use O_KPoints,         only: cleanUpKPoints
+   use O_KPoints,         only: cleanUpKPoints, numKPoints
    use O_Populate,        only: occupiedEnergy, populateStates
    use O_LAPACKParameters, only: setBlockSize
    use O_ExchangeCorrelation, only: cleanUpExchCorr
@@ -30,6 +30,9 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
    ! Import the HDF5 module
    use HDF5
+   use MPI
+   use O_Parallel
+   use O_PSetupHDF5
 
    ! Make sure that there are no accidental variable declarations.
    implicit none
@@ -42,6 +45,12 @@ subroutine mainSCF (totalEnergy, fromExternal)
    integer :: i
    integer :: OLCAOkill
    integer :: hdferr
+   integer :: mpirank, mpisize, mpierr
+   integer :: hdferr
+
+   type(BlacsInfo) :: blcsinfo
+   type(ArrayInfo) :: vvArrInfo, vvOLInfo
+   integer, dimension(2) :: pgrid
 
    ! Open (almost) all the text files that will be written to in this program.
    open (unit=7,file='fort.7',status='unknown',form='formatted')
@@ -56,6 +65,11 @@ subroutine mainSCF (totalEnergy, fromExternal)
 !   call TAU_PROFILE_TIMER(profiler, 'setup')
 !   call TAU_PROFILE_START(profiler)
 !   call TAU_PROFILE_SET_NODE(1)
+
+   ! Initialize the MPI inferface
+   call MPI_INIT(mpierr)
+   call MPI_COMM_RANK (MPI_COMM_WORLD,mpirank,mpierr)
+   call MPI_COMM_SIZE (MPI_COMM_WORLD,mpisize,mpierr)
 
 
    ! Initialize the logging labels.
@@ -76,8 +90,14 @@ subroutine mainSCF (totalEnergy, fromExternal)
    call getImplicitInfo
 
 
-   ! Prepare the HDF5 files for main.
-   call initMainHDF5(numStates)
+   ! Prepare the HDF5 files for main. Processes other than 0 will need to
+   ! read from hdf5 so we'll initialize the hdf5 interface for them.
+   if (mpirank==0) then
+      call initMainHDF5(numStates)
+   else
+      call h5open_f(hdferr)
+      if (hdferr < 0) stop 'Fail to open HDF library'
+   endif
 
 
    ! Access the setup hdf5 files.
@@ -101,9 +121,18 @@ subroutine mainSCF (totalEnergy, fromExternal)
    ! Obtain the initial potential coefficients.
    call initPotCoeffs
 
-
    ! Set up LAPACK machine parameters.
-   call setBlockSize(valeDim)
+   !call setBlockSize(valeDim)
+
+   ! Obtain the process grid information from HDF5
+   call accessPGridHDF5(pgrid)
+
+   ! Calculate the process grid from the available resources.
+   call setupBlacs(blcsinfo, pgrid) 
+
+   ! Setup arrays and array descriptors for SCALAPACK
+   call setupArrayDesc(vvArrInfo, blcsinfo, valeDim, valeDim, numKPoints)
+   call setupArrayDesc(vvOLArrInfo, blcsinfo, valeDim, valeDim, numKPoints)
 
 
    ! Begin the self consistance iterations
@@ -194,7 +223,13 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
    ! Close the HDF objects that were used.
    call closeSetupHDF5
-   call closeMainHDF5
+   if (mpirank == 0) then
+      call closeMainHDF5
+   endif
+
+   ! Deallocate local arrays
+   call deallocLocalArray(vvArrInfo)
+   call deallocLocalArray(vvOLArrrInfo)
 
    ! Close the HDF5 interface.
    call h5close_f (hdferr)
@@ -221,6 +256,10 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
    ! Open file to signal completion of the program to the calling olcao script.
    open (unit=2,file='fort.2',status='unknown')
+
+   call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+   ! Close the MPI interface
+   call MPI_FINALIZE(mpierr)
 
 end subroutine mainSCF
 

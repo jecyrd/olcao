@@ -21,6 +21,9 @@ bin/
 # to the things that make sense for their installation.
 .olcao
 
+# Ignore any vim swap file
+*.swp
+
 # ignore the external folder. This is a uniform place to put all the
 # things external to OLCAO but are meant to be used with olcao.
 /external

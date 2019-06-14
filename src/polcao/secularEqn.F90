@@ -13,16 +13,17 @@ module O_SecularEquation
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+! module data needs to go
    ! Define module data.
-   real    (kind=double), allocatable, dimension (:,:,:) :: energyEigenValues
-
-#ifndef GAMMA
-   complex (kind=double), allocatable, dimension (:,:,:,:) :: valeVale
-   complex (kind=double), allocatable, dimension (:,:,:,:) :: valeValeOL
-#else
-   real    (kind=double), allocatable, dimension (:,:,:) :: valeValeGamma
-   real    (kind=double), allocatable, dimension (:,:,:) :: valeValeOLGamma
-#endif
+!   real    (kind=double), allocatable, dimension (:,:,:) :: energyEigenValues
+!
+!#ifndef GAMMA
+!   complex (kind=double), allocatable, dimension (:,:,:,:) :: valeVale
+!   complex (kind=double), allocatable, dimension (:,:,:,:) :: valeValeOL
+!#else
+!   real    (kind=double), allocatable, dimension (:,:,:) :: valeValeGamma
+!   real    (kind=double), allocatable, dimension (:,:,:) :: valeValeOLGamma
+!#endif
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -30,7 +31,8 @@ module O_SecularEquation
    contains
 
 
-subroutine secularEqnAllKP(spinDirection, numStates, vvArr, vvOLArr, blcsinfo)
+subroutine secularEqnAllKP(spinDirection, numStates, vvArr, vvOLArr, eVals, &
+      & blcsinfo)
 
    ! Import necessary modules.
    use HDF5
@@ -60,7 +62,7 @@ subroutine secularEqnAllKP(spinDirection, numStates, vvArr, vvOLArr, blcsinfo)
    ! Define the passed parameters.
    integer :: spinDirection
    integer :: numStates
-   type(ArrayInfo) :: vvArr, vvOLArr
+   type(ArrayInfo) :: vvArr, vvOLArr, eVals
    type(BlacsInfo) :: blcsinfo
 
    ! Define the local variables used in this subroutine.

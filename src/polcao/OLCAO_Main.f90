@@ -50,7 +50,10 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
    type(BlacsInfo) :: blcsinfo
    type(ArrayInfo) :: vvArrInfo, vvOLInfo
+   type(ArrayInfo) :: lEigenValues
    integer, dimension(2) :: pgrid
+
+   real(kind=double), dimension(valeDim) :: gEigenValues
 
    ! Open (almost) all the text files that will be written to in this program.
    open (unit=7,file='fort.7',status='unknown',form='formatted')
@@ -139,15 +142,27 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
    do while (.true.)
 
+      call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
       ! Solve the schrodinger equation
       do i = 1, spin
-         call secularEqnAllKP(i,numStates,blcsinfo,vvArrInfo,vvOLArrInfo)
+         call secularEqnAllKP(i,numStates,vvArrInfo,vvOLArrInfo,lEigenValues,&
+            & blcsinfo)
       enddo
 
+      call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+      ! Reduce the eigenvalues to process 0, so that it may populate states
+      ! and then broadcast that information out to call processes
+      call reduceEigenValues()
 
       ! Find the Fermi level, and the number of occupied bands, and the
       !   number of electrons occupying each of those bands.
-      call populateStates
+      if (mpirank == 0) then
+         call populateStates
+      endif
+      call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+
+      ! Broadcast data created in populate states to the rest of the processes
+      call bCastPopulationData()
 
 
       ! Compute the TDOS if it was requested for each iteration.

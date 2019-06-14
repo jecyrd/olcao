@@ -113,6 +113,16 @@ subroutine setupSCF
 
    ! Determine the parameters for the exchange correlation mesh.
    call getECMeshParameters()
+   
+   ! Read in the atom pair lists
+   call accessAtomPairsHDF5(atomList, pgrid)
+
+   ! Setup the BLACS interface
+   call setupBlacs(blcsinfo, pgrid)
+
+   ! Setup the array descriptor needed to persist through all the overlap
+   !    routines.
+   call setupArrayDesc(cvOLArrayInfo, blcsinfo, coreDim, valeDim, numKPoints)
 
    ! Now, the dimensions of the system are known.  Therefor we can
    !   initialize the HDF5 file structure format, and datasets.
@@ -121,7 +131,7 @@ subroutine setupSCF
    !   initialize the HDF5 interface so they can read the polcaoDistribution
    !   file.
    if (mpiRank == 0) then
-      call initSetupHDF5 (maxNumRayPoints)
+      call initSetupHDF5 (maxNumRayPoints,(/cvOLArrayInfo%mb,cvOLArrayInfo%nb/))
    else
       call h5open_f(hdferr)
       if (hdferr<0) stop 'Failed to open HDF library'
@@ -142,15 +152,6 @@ subroutine setupSCF
    ! Create the alpha distance matrices.
    call makeAlphaDist()
 
-   ! Read in the atom pair lists
-   call accessAtomPairsHDF5(atomList, pgrid)
-
-   ! Setup the BLACS interface
-   call setupBlacs(blcsinfo, pgrid)
-
-   ! Setup the array descriptor needed to persist through all the overlap
-   !    routines.
-   call setupArrayDesc(cvOLArrayInfo, blcsinfo, coreDim, valeDim, numKPoints)
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions.

@@ -57,7 +57,7 @@ module O_SetupIntegralsHDF5
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initSetupIntegralHDF5 (setup_fid)
+subroutine initSetupIntegralHDF5 (setup_fid, blockSize)
 
    ! Import any necessary definition modules.
    use HDF5
@@ -69,6 +69,7 @@ subroutine initSetupIntegralHDF5 (setup_fid)
 
    ! Define the passed parameters.
    integer(hid_t) :: setup_fid
+   integer, dimension(2), intent(in) :: blockSize
 
    ! Define local variables.
    integer :: i,j
@@ -80,21 +81,26 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    atomDims(1) = valeDim
    atomDims(2) = valeDim
 
-   ! Check that the chunk size is not too large (the assumption here is that
-   !   the number being stored are 8 byte reals and that we should not go over
-   !   2 billion bytes. Note that if x*y = >250M and we want a*b = 250M then
-   !   the additional requirement x/y = a/b leads to b = sqrt(250M/>250M)*y.
-   !   Thus a = 250M/b.
-   ! Note, in the future it may be better to set the chunking size, to the size
-   !   of the blocking factors for scalapack, as thats the maximum contiguous
-   !   block of data we'll have access to at any one moment.
-   if (atomDims(1) * atomDims(2) > 250000000) then
-      atomDimsChunk(2) = int(250000000/atomDims(1))
-      atomDimsChunk(1) = atomDims(1)
-   else
-      atomDimsChunk(1) = atomDims(1)
-      atomDimsChunk(2) = atomDims(2)
-   endif
+   !! Check that the chunk size is not too large (the assumption here is that
+   !!   the number being stored are 8 byte reals and that we should not go over
+   !!   2 billion bytes. Note that if x*y = >250M and we want a*b = 250M then
+   !!   the additional requirement x/y = a/b leads to b = sqrt(250M/>250M)*y.
+   !!   Thus a = 250M/b.
+   !! Note, in the future it may be better to set the chunking size, to the size
+   !!   of the blocking factors for scalapack, as thats the maximum contiguous
+   !!   block of data we'll have access to at any one moment.
+   !if (atomDims(1) * atomDims(2) > 250000000) then
+   !   atomDimsChunk(2) = int(250000000/atomDims(1))
+   !   atomDimsChunk(1) = atomDims(1)
+   !else
+   !   atomDimsChunk(1) = atomDims(1)
+   !   atomDimsChunk(2) = atomDims(2)
+   !endif
+
+   ! We want the chucking dimensions to be equal to the SCALAPACK block size
+   ! because it will be the largest contiguous blocks read or written
+   atomDimsChunk(1) = blockSize(1)
+   atomDimsChunk(2) = blockSize(2)
 
    ! Create the Integral group within the setup HDF5 file.
    call h5gcreate_f (setup_fid,"/atomIntgGroup",atomIntgGroup_gid,hdferr)

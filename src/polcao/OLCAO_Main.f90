@@ -141,7 +141,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
       ! Solve the schrodinger equation
       do i = 1, spin
-         call secularEqnAllKP(i,numStates)
+         call secularEqnAllKP(i,numStates,blcsinfo,vvArrInfo,vvOLArrInfo)
       enddo
 
 

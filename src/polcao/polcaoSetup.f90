@@ -753,6 +753,8 @@ subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
       enddo
       
       deallocate(dataOut)
+
+      call h5sclose_f(memspace_dsid, hdferr)
     enddo
   enddo
 

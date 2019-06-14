@@ -44,7 +44,7 @@ subroutine secularEqnAllKP(spinDirection, numStates, vvArr, vvOLArr, blcsinfo)
    use O_SetupIntegralsHDF5, only: atomDims, atomOverlap_did, &
          & atomKEOverlap_did, atomNucOverlap_did, atomPotOverlap_did
 #ifndef GAMMA
-   use O_LAPACKZHEGV
+   use O_SCALAPACKPZHEGVX
    use O_MatrixSubs, only: readPackedMatrix, readPackedMatrixAccum, unpackMatrix
 #else
    use O_LAPACKDSYGV
@@ -156,17 +156,16 @@ subroutine secularEqnAllKP(spinDirection, numStates, vvArr, vvOLArr, blcsinfo)
 
       ! Solve the eigen problem with a LAPACK routine.
 #ifndef GAMMA
-      call solveZHEGV(valeDim,numStates,valeVale(:,:,1,spinDirection),&
-            & valeValeOL(:,:,1,1),energyEigenValues(:,i,spinDirection))
+      call solveZHEGV(vvArr,vvOLArr,eVals,blcsinfo)
 #else
       call solveDSYGV(valeDim,numStates,valeValeGamma(:,:,spinDirection),&
             & valeValeOLGamma(:,:,1),energyEigenValues(:,i,spinDirection))
 #endif
 
       ! Write the energy eigenValues onto disk in HDF5 format in a.u.
-      call h5dwrite_f (eigenValues_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
-            & energyEigenValues(:,i,spinDirection),states,hdferr)
-      if (hdferr /= 0) stop 'Cannot write energy eigen values.'
+      !call h5dwrite_f (eigenValues_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
+      !      & energyEigenValues(:,i,spinDirection),states,hdferr)
+      !if (hdferr /= 0) stop 'Cannot write energy eigen values.'
 
       ! In the event that we have some atoms with plusUJ terms, we need to
       !   update the terms. The update depends on the charge in each of the
@@ -178,40 +177,38 @@ subroutine secularEqnAllKP(spinDirection, numStates, vvArr, vvOLArr, blcsinfo)
       if (numPlusUJAtoms > 0) then
 
          ! Read the atomic overlap matrix. 
-         call readPackedMatrix(atomOverlap_did(i),packedValeVale,&
-               & atomDims,dim1,valeDim)
+         call readPackedMatrix(atomOverlap_did(i),vvOLArr,blcsinfo)
 
          ! Unpack the overlap matrix.
 #ifndef GAMMA
-         call unpackMatrix(valeValeOL(:,:,1,1),packedValeVale,valeDim,0)
+         ! Nothing to do in this case reminder for later
 #else
          call unpackMatrixGamma(valeValeOLGamma(:,:,1),packedValeVale,valeDim,0)
 #endif
       endif
 
 #ifndef GAMMA
+      call writeWaveFunction()
       ! Write the wave function only if there is more than 1 kpoint.
       !   Clearly this will exclude gamma kpoint calculations too.
-      if (numKPoints >= 1) then
-         ! Write the eigenVectors onto disk in HDF5 format for this
-         !   kpoint and spin direction.
-         call h5dwrite_f(eigenVectors_did(1,i,spinDirection),&
-               & H5T_NATIVE_DOUBLE,real(valeVale(:,:numStates,1,&
-               & spinDirection),double),valeStates,hdferr)
-         if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
-         call h5dwrite_f(eigenVectors_did(2,i,spinDirection),&
-               & H5T_NATIVE_DOUBLE,aimag(valeVale(:,:numStates,1,&
-               & spinDirection)),valeStates,hdferr)
-         if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors.'
-      endif
+      !if (numKPoints >= 1) then
+      !   ! Write the eigenVectors onto disk in HDF5 format for this
+      !   !   kpoint and spin direction.
+      !   call h5dwrite_f(eigenVectors_did(1,i,spinDirection),&
+      !         & H5T_NATIVE_DOUBLE,real(valeVale(:,:numStates,1,&
+      !         & spinDirection),double),valeStates,hdferr)
+      !   if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
+      !   call h5dwrite_f(eigenVectors_did(2,i,spinDirection),&
+      !         & H5T_NATIVE_DOUBLE,aimag(valeVale(:,:numStates,1,&
+      !         & spinDirection)),valeStates,hdferr)
+      !   if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors.'
+      !endif
 #endif
    enddo ! Loop i over kpoints.
 
    ! Deallocate unnecessary arrays and matrices.
-   deallocate (packedValeVale)
-   deallocate (tempPackedValeVale)
 #ifndef GAMMA
-   deallocate(valeValeOL)
+   ! Nothing to do here, left as reminder for later
 #else
    deallocate(valeValeOLGamma)
 #endif

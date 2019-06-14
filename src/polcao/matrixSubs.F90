@@ -245,8 +245,7 @@ end subroutine readMatrixGamma
 
 ! This subroutine does not need two versions for the GAMMA and non-GAMMA cases,
 !   but it does need two versions for the accumulate and non-accumulate cases.
-subroutine readPackedMatrixAccum (datasetID,packedMatrix,tempPackedMatrix,&
-      & matrixDims,multFactor,dim1,dim2)
+subroutine readPackedMatrixAccum (datasetID,arrInfo,blcsInfo,multFactor)
 
    ! Import the precision variables and the type definitions.
    use O_Kinds
@@ -256,25 +255,74 @@ subroutine readPackedMatrixAccum (datasetID,packedMatrix,tempPackedMatrix,&
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
    integer (hid_t) :: datasetID
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: packedMatrix
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: tempPackedMatrix
-   integer (hsize_t), dimension (2) :: matrixDims
+   type(ArrayInfo) :: arrInfo
+   type(BlacsInfo) :: blcsinfo
    real (kind=double) :: multFactor
 
    ! Define local variables
    integer :: hdferr
+   integer :: l,m
+   integer :: gi,gj
+   integer :: a,b
+   integer :: x,y
+   real (kind=double), dimension(arrInfo%mb,arrInfo%nb) :: tempBlock
+   real (kind=double), dimension(arrInfo%nb,arrInfo%mb) :: tempBlockDag
 
-   ! Read the matrix into a temp matrix first so we can operate on it.
-   call h5dread_f (datasetID,H5T_NATIVE_DOUBLE,tempPackedMatrix,matrixDims,&
-         & hdferr)
-   if (hdferr /= 0) stop 'Failed to read packed matrix into a temp matrix'
+   ! Need to change some variable names, and verify the call statements.
+   ! Also need to properly account for the case that an element is on the
+   ! diagonal, as well as the case where the "real" part is actually a block
+   ! contained completely on the lower diagonal
+   do l=0,arrInfo%nrblocks-1
+      do m=0,arrIno%ncblocks-1
+         gi = (l*arrInfo%mb - 0)*blcsinfo%myprow + 1
+         gj = (m*arrInfo%nb - 0)*blcsinfo%mypcol + 1
 
-   ! When reading the hamiltonian terms for the scf iterations, it is
-   !   necessary to multiply each matrix by the appropriate coefficient.
-   !   If the multFactor coefficient is not zero, then that is done here.
+         ! Create memspace and select hyperslab to read from for real part
+         call h5screate_simple_f(2,hslabCount,memspace_did,hdferr)
+         call h5sselect_hyperslab_f(datasetID, H5S_SELECT_SET_F, hslabStart, &
+            & hslabCount, hdferr)
+         
+         ! Create memspace and select hyperslab to read from for complex part
+         call h5screate_simple_f(2,hslabCount,memspace_did,hdferr)
+         call h5sselect_hyperslab_f(datasetID, H5S_SELECT_SET_F, hslabStart, &
+            & hslabCount, hdferr)
+
+         ! Read hyperslabs
+         call h5dread_f(datasetID,H5T_NATIVE_DOUBLE,tempBlock,hslabCount, &
+            & hdferr, file_space_id=valeVale_dsid, mem_space_id=memspace_did)
+         if (hdferr /= 0) stop 'Failed to read packed matrix'
+
+         call h5dread_f(datasetID,H5T_NATIVE_DOUBLE,tempBlockDag,hslabCount, &
+            & hdferr, file_space_id=valeVale_dsid, mem_space_id=memspace_did)
+         if (hdferr /= 0) stop 'Failed to read packed matrix'
+
+         x=1
+         do a=l*arrInfo%mb,(l*arrInfo%mb+arrInfo%mb)
+            y=1
+            do b=m*arrInfo%nb,(m*arrInfo%nb+arrInfo%nb)
+               ! When reading the hamiltonian terms for the scf iterations, 
+               ! it is necessary to multiply each matrix by the appropriate 
+               ! coefficient. If the multFactor coefficient is not zero, 
+               ! then that is done here.
+               if (multFactor == 0.0_double) then
+                  arrInfo%local(a,b) = arrInfo%local(a,b) + & 
+                     & cmplx(tempBlock(x,y),tempBlockDag(y,x))
+               else
+                  arrInfo%local(a,b) = arrInfo%local(a,b) + & 
+                     & cmplx(tempBlock(x,y),tempBlockDag(y,x)) * multFactor
+               endif
+               y = y + 1
+            enddo
+            x = x + 1
+         enddo
+
+         call h5sclose_f(memspace_dsid,hdferr)
+         call h5sclose_f(memspace_dsid,hdferr)
+      enddo
+   enddo
+
+
    if (multFactor == 0.0_double) then
       packedMatrix = packedMatrix + tempPackedMatrix
    else
@@ -284,24 +332,72 @@ subroutine readPackedMatrixAccum (datasetID,packedMatrix,tempPackedMatrix,&
 end subroutine readPackedMatrixAccum
 
 
-subroutine readPackedMatrix (datasetID,packedMatrix,matrixDims,dim1,dim2)
+subroutine readPackedMatrix (datasetID,arrInfo,blcsinfo)
 
    ! Import the precision variables and the type definitions.
    use O_Kinds
    use HDF5
+   use O_Parallel
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
    integer (hid_t) :: datasetID
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: packedMatrix
-   integer (hsize_t), dimension (2) :: matrixDims
+   type(ArrayInfo) :: arrInfo
+   type(BlacsInfo) :: blcsinfo
 
    ! Define local variables
    integer :: hdferr
+   integer :: l,m
+   integer :: gi,gj
+   integer :: a,b
+   integer :: x,y
+   real (kind=double), dimension(arrInfo%mb,arrInfo%nb) :: tempBlock
+   real (kind=double), dimension(arrInfo%nb,arrInfo%mb) :: tempBlockDag
+
+   ! Need to change some variable names, and verify the call statements.
+   ! Also need to properly account for the case that an element is on the
+   ! diagonal, as well as the case where the "real" part is actually a block
+   ! contained completely on the lower diagonal
+   do l=0,arrInfo%nrblocks-1
+      do m=0,arrIno%ncblocks-1
+         gi = (l*arrInfo%mb - 0)*blcsinfo%myprow + 1
+         gj = (m*arrInfo%nb - 0)*blcsinfo%mypcol + 1
+
+         ! Create memspace and select hyperslab to read from for real part
+         call h5screate_simple_f(2,hslabCount,memspace_did,hdferr)
+         call h5sselect_hyperslab_f(datasetID, H5S_SELECT_SET_F, hslabStart, &
+            & hslabCount, hdferr)
+         
+         ! Create memspace and select hyperslab to read from for complex part
+         call h5screate_simple_f(2,hslabCount,memspace_did,hdferr)
+         call h5sselect_hyperslab_f(datasetID, H5S_SELECT_SET_F, hslabStart, &
+            & hslabCount, hdferr)
+
+         ! Read hyperslabs
+         h5dread_f(datasetID,H5T_NATIVE_DOUBLE,tempBlock,hslabCount,hdferr, &
+            & file_space_id=valeVale_dsid, mem_space_id=memspace_did)
+         if (hdferr /= 0) stop 'Failed to read packed matrix'
+
+         h5dread_f(datasetID,H5T_NATIVE_DOUBLE,tempBlockDag,hslabCount,hdferr, &
+            & file_space_id=valeVale_dsid, mem_space_id=memspace_did)
+         if (hdferr /= 0) stop 'Failed to read packed matrix'
+
+         x=1
+         do a=l*arrInfo%mb,(l*arrInfo%mb+arrInfo%mb)
+            y=1
+            do b=m*arrInfo%nb,(m*arrInfo%nb+arrInfo%nb)
+               arrInfo%local(a,b) = cmplx(tempBlock(x,y),tempBlockDag(y,x))
+               y = y + 1
+            enddo
+            x = x + 1
+         enddo
+
+         call h5sclose_f(memspace_dsid,hdferr)
+         call h5sclose_f(memspace_dsid,hdferr)
+      enddo
+   enddo
 
    ! Read the matrix directly.
    call h5dread_f (datasetID,H5T_NATIVE_DOUBLE,packedMatrix,matrixDims,hdferr)
@@ -504,6 +600,8 @@ end subroutine packMatrixGamma
 !   endif
 !
 !end subroutine unfold
+
+
 
 
 end module O_MatrixSubs

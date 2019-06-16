@@ -40,7 +40,7 @@ module O_ParallelMain
 
       ! The local array that will contain the distributed data
       complex (kind=double), allocatable, dimension(:,:,:) :: local
-   end type sArrayInfo
+   end type mArrayInfo
 #else
    ! Same as above but only used for the gamma case
    type mArrayInfo
@@ -72,7 +72,7 @@ module O_ParallelMain
 
       ! The local array that will contain the distributed data
       real (kind=double), allocatable, dimension(:,:) :: local
-   end type sArrayInfo
+   end type mArrayInfo
 #endif
 
 

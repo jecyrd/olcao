@@ -42,9 +42,9 @@ subroutine pctrans(aInfo, cInfo)
    integer :: i
 
    do i=1,aInfo%numKP
-   call pztranc(aInfo%J,aInfo%I,(1.0_double,0.0_double),aInfo%local(:,:,i), &
-      & 1,1,aInfo%desc,(1.0_double,0.0_double),cInfo%local(:,:,i),1,1, &
-      & cInfo%desc)
+      call pztranc(aInfo%J,aInfo%I,(1.0_double,0.0_double),aInfo%local(:,:,i), &
+         & 1,1,aInfo%desc,(1.0_double,0.0_double),cInfo%local(:,:,i),1,1, &
+         & cInfo%desc)
    enddo
 end subroutine pctrans
 
@@ -61,9 +61,9 @@ subroutine pdtrans(aInfo, cInfo)
    integer :: i
 
    do i=1,aInfo%numKP
-   call pdtran(aInfo%J,aInfo%I,1.0_double,aInfo%local, &
-      & aInfo%mb,aInfo%nb,aInfo%desc,1.0_double, cInfo%local, &
-      & 0,0,cInfo%desc)
+      call pdtran(aInfo%J,aInfo%I,1.0_double,aInfo%local, &
+         & aInfo%mb,aInfo%nb,aInfo%desc,1.0_double, cInfo%local, &
+         & 0,0,cInfo%desc)
    enddo
 end subroutine pdtrans
 

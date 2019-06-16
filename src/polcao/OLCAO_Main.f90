@@ -53,7 +53,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
    type(ArrayInfo) :: lEigenValues
    integer, dimension(2) :: pgrid
 
-   real(kind=double), dimension(valeDim) :: gEigenValues
+   real(kind=double), dimension(valeDim) :: allEnergyEigenValues
 
    ! Open (almost) all the text files that will be written to in this program.
    open (unit=7,file='fort.7',status='unknown',form='formatted')

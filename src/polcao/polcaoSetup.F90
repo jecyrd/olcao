@@ -424,44 +424,46 @@ subroutine getArrAtomPairs(arrinfo, blcsinfo, atomPairs, atomTree, whichArr)
 
    ! Now we loop over these blocks and record the results in atomPairs
    do i=1, arrinfo%nrblocks
-   do j=1, arrinfo%ncblocks
-   ! Need to set extra if we have an irregularly sized block that needs to
-   ! be handled. If we are at the last block and there are extra rows or 
-   ! columns we need to set extra to reflect that. Specifically for J
-   ! if we have extra columns, and extra was set to 0, then we don't have
-   ! extra rows for this block. However, if extra was already set to 1
-   ! then we have both extra rows and columns.
-   extra = 0
-   if ((i == arrinfo%nrblocks) .and. (arrinfo%extraRows>0)) then
-      extra = 1
-   endif
-   if ((j == arrinfo%ncblocks) .and. (arrinfo%extraCols>0)) then
-      if (extra == 0) then
-         extra = 2
-      elseif (extra == 1) then
-         extra = 3
-      endif
-   endif
+      do j=1, arrinfo%ncblocks
+         ! Need to set extra if we have an irregularly sized block that needs to
+         ! be handled. If we are at the last block and there are extra rows or 
+         ! columns we need to set extra to reflect that. Specifically for J
+         ! if we have extra columns, and extra was set to 0, then we don't have
+         ! extra rows for this block. However, if extra was already set to 1
+         ! then we have both extra rows and columns.
+         extra = 0
+         if ((i == arrinfo%nrblocks) .and. (arrinfo%extraRows>0)) then
+            extra = 1
+         endif
+         if ((j == arrinfo%ncblocks) .and. (arrinfo%extraCols>0)) then
+            if (extra == 0) then
+               extra = 2
+            elseif (extra == 1) then
+               extra = 3
+            endif
+         endif
 
-   ! For localToGlobalMap we need the the starting indices of the block (a,b)
-   ! This is just the array index minus 1, times the block size, plus 1
-   !a = (i-1)*arrinfo%mb+1
-   !b = (j-1)*arrinfo%nb+1
-   a = (i-1)*arrinfo%mb+1
-   b = (j-1)*arrinfo%nb+1
+         ! For localToGlobalMap we need the the starting indices of the block 
+         ! (a,b) This is just the array index minus 1, times the block size, 
+         ! plus 1
+         !a = (i-1)*arrinfo%mb+1
+         !b = (j-1)*arrinfo%nb+1
+         a = (i-1)*arrinfo%mb+1
+         b = (j-1)*arrinfo%nb+1
 
-   ! Now we get the vale indices having to be searched
-   call localToGlobalMap(a, b, glo, ghi, arrinfo, blcsinfo, extra)
+         ! Now we get the vale indices having to be searched
+         call localToGlobalMap(a, b, glo, ghi, arrinfo, blcsinfo, extra)
 
-   ! Now we do the searches for the atoms
-   call getAtoms(glo(1), alo(1), firstDim)
-   call getAtoms(glo(2), alo(2), secondDim)
-   call getAtoms(ghi(1), ahi(1), firstDim)
-   call getAtoms(ghi(2), ahi(2), secondDim)
+         ! Now we do the searches for the atoms
+         call getAtoms(glo(1), alo(1), firstDim)
+         call getAtoms(glo(2), alo(2), secondDim)
+         call getAtoms(ghi(1), ahi(1), firstDim)
+         call getAtoms(ghi(2), ahi(2), secondDim)
 
-   ! Now we need to enumerate the atomPairs and add them to our tree and list
-   call addAtomPairRange(alo, ahi, atomPairs, atomTree, i, j, whichArr)
-   enddo
+         ! Now we need to enumerate the atomPairs and add them to our tree 
+         ! and list.
+         call addAtomPairRange(alo, ahi, atomPairs, atomTree, i, j, whichArr)
+      enddo
    enddo
 
 end subroutine getArrAtomPairs
@@ -488,13 +490,13 @@ subroutine addAtomPairRange(alo, ahi, atomPairs, atomTree, nrblock, ncblock, &
    integer :: i,j  ! loop vars
 
    do i=alo(1),ahi(1)
-   do j=alo(2),ahi(2)
-   ! We only need to fill the upper triangle of the vale vale matrix
-   ! so we only don't need atom pairs where i>j
-   !if (i<=j) then
-   call addAtomPair(i,j, atomPairs, atomTree, nrblock, ncblock, whichArr)
-   !endif
-   enddo
+      do j=alo(2),ahi(2)
+         ! We only need to fill the upper triangle of the vale vale matrix
+         ! so we only don't need atom pairs where i>j
+         !if (i<=j) then
+         call addAtomPair(i,j, atomPairs, atomTree, nrblock, ncblock, whichArr)
+         !endif
+      enddo
    enddo
 end subroutine addAtomPairRange
 
@@ -616,10 +618,10 @@ subroutine getAtoms(gIndx, atomIndx, whichCumul)
          atomIndx = numAtomSites
       else
          do i=1, numAtomSites-1
-         if (gIndx >= atomSites(i)%cumulValeStates .and. &
-            & gIndx <= atomSites(i+1)%cumulValeStates) then
-            atomIndx = i 
-         endif
+            if (gIndx >= atomSites(i)%cumulValeStates .and. &
+               & gIndx <= atomSites(i+1)%cumulValeStates) then
+               atomIndx = i 
+            endif
          enddo
       endif
 
@@ -630,10 +632,10 @@ subroutine getAtoms(gIndx, atomIndx, whichCumul)
          atomIndx = numAtomSites
       else
          do i=1, numAtomSites-1
-         if (gIndx >= atomSites(i)%cumulCoreStates .and. &
-            & gIndx <= atomSites(i+1)%cumulCoreStates) then
-            atomIndx = i 
-         endif
+            if (gIndx >= atomSites(i)%cumulCoreStates .and. &
+               & gIndx <= atomSites(i+1)%cumulCoreStates) then
+               atomIndx = i 
+            endif
          enddo
       endif
    endif
@@ -758,76 +760,76 @@ subroutine writeValeVale(arrinfo, blcsinfo, numKPoints, potDim, &
    !hslabCount(3) = size(arrinfo%local,3)
 
    do i=0,arrinfo%nrblocks-1
-   do j=0,arrinfo%ncblocks-1
-   if ((arrinfo%extraRows>0) .and. (i==arrinfo%nrblocks-1) .and. &
-      & (arrinfo%extraCols>0) .and. (j==arrinfo%ncblocks-1)) then
-      hslabCount(1) = arrinfo%extraRows
-      hslabCount(2) = arrinfo%extraCols
-   else if ((arrinfo%extraRows>0) .and. (i==arrinfo%nrblocks-1)) then
-      hslabCount(1) = arrinfo%extraRows
-      hslabCount(2) = arrinfo%nb
-   else if ((arrinfo%extraCols>0) .and. (j==arrinfo%ncblocks-1)) then
-      hslabCount(1) = arrinfo%mb
-      hslabCount(2) = arrinfo%extraCols
-   else
-      hslabCount(1) = arrinfo%mb
-      hslabCount(2) = arrinfo%nb
-   endif
+      do j=0,arrinfo%ncblocks-1
+         if ((arrinfo%extraRows>0) .and. (i==arrinfo%nrblocks-1) .and. &
+            & (arrinfo%extraCols>0) .and. (j==arrinfo%ncblocks-1)) then
+            hslabCount(1) = arrinfo%extraRows
+            hslabCount(2) = arrinfo%extraCols
+         else if ((arrinfo%extraRows>0) .and. (i==arrinfo%nrblocks-1)) then
+            hslabCount(1) = arrinfo%extraRows
+            hslabCount(2) = arrinfo%nb
+         else if ((arrinfo%extraCols>0) .and. (j==arrinfo%ncblocks-1)) then
+            hslabCount(1) = arrinfo%mb
+            hslabCount(2) = arrinfo%extraCols
+         else
+            hslabCount(1) = arrinfo%mb
+            hslabCount(2) = arrinfo%nb
+         endif
 
-   ! Allocate space for this exact block size
-   allocate(dataOut(hslabCount(1),hslabCount(2),size(arrinfo%local,3)))
+         ! Allocate space for this exact block size
+         allocate(dataOut(hslabCount(1),hslabCount(2),size(arrinfo%local,3)))
 
-   a = i*arrinfo%mb
-   b = j*arrinfo%nb
-   call localToGlobalMap(a,b, lo, hi, arrinfo, blcsinfo, 0)
-   hslabStart(1) = lo(1)-1
-   hslabStart(2) = lo(2)-1
-   !hslabStart(3) = 1
+         a = i*arrinfo%mb
+         b = j*arrinfo%nb
+         call localToGlobalMap(a,b, lo, hi, arrinfo, blcsinfo, 0)
+         hslabStart(1) = lo(1)-1
+         hslabStart(2) = lo(2)-1
+         !hslabStart(3) = 1
 
-   call h5screate_simple_f(2, hslabCount, memspace_dsid, hdferr)
+         call h5screate_simple_f(2,hslabCount,memspace_dsid,hdferr)
 
-   ! Define hyperslab to be written to
-   call h5sselect_hyperslab_f(valeVale_dsid, H5S_SELECT_SET_F, hslabStart, &
-      & hslabCount, hdferr)
+         ! Define hyperslab to be written to
+         call h5sselect_hyperslab_f(valeVale_dsid,H5S_SELECT_SET_F,hslabStart, &
+            & hslabCount, hdferr)
 
-   ! Need to prepare the data so that complex parts are on saved on the
-   ! bottom half of matrix, and real parts on the top half.
-   x=1
-   do k=hslabStart(1)+1,(hslabStart(1)+hslabCount(1))
-   y=1
-   do l=hslabStart(2)+1,(hslabStart(2)+hslabCount(2))
-   if (l>=k) then ! top half
-      dataOut(x,y,:) = real(arrinfo%local(a+x,b+y,:))
-   else ! Bottom half
-      dataOut(x,y,:) = aimag(arrinfo%local(a+x,b+y,:))
-   endif
-   y = y + 1
-   enddo
-   x = x + 1
-   enddo
+         ! Need to prepare the data so that complex parts are on saved on the
+         ! bottom half of matrix, and real parts on the top half.
+         x=1
+         do k=hslabStart(1)+1,(hslabStart(1)+hslabCount(1))
+            y=1
+            do l=hslabStart(2)+1,(hslabStart(2)+hslabCount(2))
+               if (l>=k) then ! top half
+                  dataOut(x,y,:) = real(arrinfo%local(a+x,b+y,:))
+               else ! Bottom half
+                  dataOut(x,y,:) = aimag(arrinfo%local(a+x,b+y,:))
+               endif
+               y = y + 1
+            enddo
+            x = x + 1
+         enddo
 
-   do kpl=1,numKPoints 
-   select case (opCode)
-   case(1:3)
-      ! write slab to disk
-      call h5dwrite_f(datasetToWrite_did(kpl,1), H5T_NATIVE_DOUBLE, &
-         & dataOut(:,:,kpl),hslabCount,hdferr, &
-         & file_space_id=valeVale_dsid, mem_space_id=memspace_dsid)
-   case(4)
-      call h5dwrite_f(datasetToWrite_did( &
-         & kpl,potTypes(currPotTypeNumber)%cumulAlphaSum+currAlphaNumber), &
-         H5T_NATIVE_DOUBLE, dataOut(:,:,kpl), &
-         & hslabCount, hdferr, file_space_id=valeVale_dsid, &
-         & mem_space_id=memspace_dsid)
-   case default
-      print *, "Something went very wrong in writeValeVale"
-   end select
-   enddo
+         do kpl=1,numKPoints 
+            select case (opCode)
+            case(1:3)
+               ! write slab to disk
+               call h5dwrite_f(datasetToWrite_did(kpl,1), H5T_NATIVE_DOUBLE, &
+                  & dataOut(:,:,kpl),hslabCount,hdferr, &
+                  & file_space_id=valeVale_dsid, mem_space_id=memspace_dsid)
+            case(4)
+               call h5dwrite_f(datasetToWrite_did(kp, &
+                  & potTypes(currPotTypeNumber)%cumulAlphaSum+currAlphaNumber),&
+                  & H5T_NATIVE_DOUBLE, dataOut(:,:,kpl), &
+                  & hslabCount, hdferr, file_space_id=valeVale_dsid, &
+                  & mem_space_id=memspace_dsid)
+            case default
+               print *, "Something went very wrong in writeValeVale"
+            end select
+         enddo
 
-   deallocate(dataOut)
+         deallocate(dataOut)
 
-   call h5sclose_f(memspace_dsid, hdferr)
-   enddo
+         call h5sclose_f(memspace_dsid, hdferr)
+      enddo
    enddo
 
 

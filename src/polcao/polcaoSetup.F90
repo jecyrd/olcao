@@ -1,5 +1,8 @@
-! Documentation here
-!
+!! This module is focused on the parallelization of OLCAOsetup
+!!
+!! Author: James E. Currie
+!! Email: jecyrd@mail.umkc.edu
+!!
 module O_ParallelSetup
    use MPI
    implicit none
@@ -11,8 +14,76 @@ module O_ParallelSetup
       type(atomPair), pointer :: next => null()
    end type AtomPair
 
+#ifndef GAMMA
+   ! This structure holds information about the Global and Local arrays needed
+   ! by a process to complete some distributed operation.
+   type sArrayInfo
+
+      ! This is the BLACS array descriptor assosciated with some array
+      integer, dimension(9) :: desc
+
+      ! These are the size of the dimensions of the global array
+      integer :: I
+      integer :: J
+      integer :: numKP
+
+      ! Together mb and nb define the block size used for the block-cyclic
+      ! distribution.
+      ! This is the blocking factor used to distribute the rows of the array
+      integer :: mb
+      ! This is the blocking factor used to distribute the columns of the array
+      integer :: nb
+
+      ! This is the number of blocks along the rows that the process has
+      integer :: nrblocks
+      ! This is the number of blocks along the columns that the process has
+      integer :: ncblocks
+
+      ! Holds the extra rows/columns in the respective dimensions for a process
+      ! in the event that the matrix is not evenly distributable.
+      integer :: extraRows
+      integer :: extraCols
+
+      ! The local array that will contain the distributed data
+      complex (kind=double), allocatable, dimension(:,:,:) :: local
+   end type sArrayInfo
+#else 
+   ! Same as above but only used for the gamma case
+   type sArrayInfo
+
+      ! This is the BLACS array descriptor assosciated with some array
+      integer, dimension(9) :: desc
+
+      ! These are the size of the dimensions of the global array
+      integer :: I
+      integer :: J
+      integer :: numKP
+
+      ! Together mb and nb define the block size used for the block-cyclic
+      ! distribution.
+      ! This is the blocking factor used to distribute the rows of the array
+      integer :: mb
+      ! This is the blocking factor used to distribute the columns of the array
+      integer :: nb
+
+      ! This is the number of blocks along the rows that the process has
+      integer :: nrblocks
+      ! This is the number of blocks along the columns that the process has
+      integer :: ncblocks
+
+      ! Holds the extra rows/columns in the respective dimensions for a process
+      ! in the event that the matrix is not evenly distributable.
+      integer :: extraRows
+      integer :: extraCols
+
+      ! The local array that will contain the distributed data
+      real (kind=double), allocatable, dimension(:,:) :: local
+   end type sArrayInfo
+#endif
+
+
    ! Begin list of subroutines and functions
-contains
+   contains
 
    ! This subroutine initializes a new element in the atomPair linked list
 subroutine initAtomPair(atomNode,i,j)

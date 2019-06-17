@@ -49,11 +49,11 @@ subroutine mainSCF (totalEnergy, fromExternal)
    integer :: hdferr
 
    type(BlacsInfo) :: blcsinfo
-   type(ArrayInfo) :: vvArrInfo, vvOLInfo
-   type(ArrayInfo) :: lEigenValues
+   type(mArrayInfo) :: vvArrInfo, vvOLInfo
+   type(mArrayInfo) :: lEigenValues
    integer, dimension(2) :: pgrid
 
-   real(kind=double), dimension(valeDim) :: allEnergyEigenValues
+   real(kind=double), allocatable, dimension(valeDim) :: allEnergyEigenValues
 
    ! Open (almost) all the text files that will be written to in this program.
    open (unit=7,file='fort.7',status='unknown',form='formatted')
@@ -137,9 +137,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
    call setupArrayDesc(vvArrInfo, blcsinfo, valeDim, valeDim, numKPoints)
    call setupArrayDesc(vvOLArrInfo, blcsinfo, valeDim, valeDim, numKPoints)
 
-
    ! Begin the self consistance iterations
-
    do while (.true.)
 
       call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
@@ -152,32 +150,29 @@ subroutine mainSCF (totalEnergy, fromExternal)
       call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
       ! Reduce the eigenvalues to process 0, so that it may populate states
       ! and then broadcast that information out to call processes
+      allocate(allEnergyEigenValues(valeDim))
       call reduceEigenValues()
 
       ! Find the Fermi level, and the number of occupied bands, and the
       !   number of electrons occupying each of those bands.
       if (mpirank == 0) then
-         call populateStates
+         call populateStates(allEnergyEigenValues)
+         ! Compute the TDOS if it was requested for each iteration.
+         if (iterFlagTDOS == 1) then
+            call computeIterationTDOS(allEnergyEigenValues)
+         endif
       endif
       call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
 
       ! Broadcast data created in populate states to the rest of the processes
       call bCastPopulationData()
-
-
-      ! Compute the TDOS if it was requested for each iteration.
-      if (iterFlagTDOS == 1) then
-         call computeIterationTDOS
-      endif
-
+      deallocate(allEnergyEigenValues)
 
       ! Calculate the valence charge density
       call makeValenceRho
 
-
       ! Compute the new self consistant potential
       call makeSCFPot(totalEnergy)
-
 
       ! Determine if the computation is complete
       if ((converged == 1) .or. (currIteration > lastIteration)) exit
@@ -189,14 +184,10 @@ subroutine mainSCF (totalEnergy, fromExternal)
       endif
    enddo
 
-
-
    ! Print the accumulated TDOS in a useful format if requested in the input.
    if (iterFlagTDOS == 1) then
       call printIterationTDOS
    endif
-
-
 
    ! Compute the final band structure if convergence was achieved or if the
    !   last iteration was done.  (I.e. we are out of the SCF loop.)

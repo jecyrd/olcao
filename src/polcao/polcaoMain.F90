@@ -260,18 +260,38 @@ subroutine sendLocalArray()
 end subroutine sendLocalArray
 
 
-! This subroutine is responsible for making sure the eigenvalues are
-! redistributed to all processes for use later
-subroutine distributeEigenVals()
-!  call MPI_BROADCAST
+! Collects the distributed eigenvalues on each process onto process 0 so that
+! process 0 can run populate states.
+subroutine reduceEigenValues(blcsinfo, evInfo, allEigenValues)
+   use MPI
+   use O_Parallel
+
+   ! Make sure no funny variables are defined
+   implicit none
+
+   ! Defined passed parameters
+   type(BlacsInfo), intent(in) :: blcsinfo
+   type(mArrayInfo), intent(in) :: evInfo
+   real(kind=double), dimension(:), intent(inout) :: allEigenValues
+
+   ! Define local variables
+   integer :: i
+
+   ! First, each process needs to calculate where it's local set of eigenValues
+   ! belongs in the allEigenValues vector.
+
+   allEigenValues(i) = evInfo&local(i)
+
+   ! Now we can reduce onto process zero
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,allEigenValues, size(allEigenValues,1), &
+         & MPI_SUM, 0, MPI_COMM_WORLD, mpierr)
+   else
+      call MPI_REDUCE(allEigenValues,allEigenValues,size(allEigenValues,1), &
+         & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, mpierr)
+   endif
 
 end subroutine
-
-! This subroutine cleans up scalapack descriptors and contexts
-subroutine cleanUpSl(slctxt, desca, descb, descz)
-  implicit none
-
-end subroutine cleanUpSl
 
 subroutine solvePZHEGVX(vvArr,vvOLArr,eVals,blcsinfo)
 
@@ -279,7 +299,7 @@ subroutine solvePZHEGVX(vvArr,vvOLArr,eVals,blcsinfo)
    use O_Parallel
    use O_SCALAPACKPZHEGVX
 
-   ! Make sure no funny varaibles are defined
+   ! Make sure no funny variables are defined
    implicit none
 
    ! Define passed Parameters

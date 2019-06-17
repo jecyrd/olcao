@@ -16,19 +16,21 @@ module O_DOS
 
    contains
 
-subroutine computeIterationTDOS
+subroutine computeIterationTDOS(energyEigenValues)
 
    ! Import the necessary modules.
    use O_Kinds
    use O_Constants,       only: pi, hartree
    use O_Populate,        only: occupiedEnergy
-   use O_SecularEquation, only: energyEigenValues
    use O_KPoints,         only: numKPoints, kPointWeight
    use O_Potential,       only: spin, lastIteration, currIteration
    use O_Input, only: sigmaDOS, eminDOS, emaxDOS, deltaDOS, numStates
 
    ! Make sure that no variables are declared accidentally.
    implicit none
+
+   ! Define passed parameters
+   real(kind=double), dimension(:), intent(in) :: energyEigenValues
 
    ! Define local variables
    integer :: i,j,k,l

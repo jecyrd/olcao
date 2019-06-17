@@ -129,7 +129,7 @@ module O_Populate
 !     populated.
 
 
-subroutine populateStates
+subroutine populateStates(energyEigenValues)
 
    ! Import necessary modules.
    use O_Kinds
@@ -140,6 +140,9 @@ subroutine populateStates
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+   
+   ! Defined passed parameters
+   real(kind=double), dimension(:) :: energyEigenValues
 
    ! Log the date and time we start.
    call timeStampStart (16)
@@ -169,7 +172,7 @@ subroutine populateStates
 end subroutine populateStates
 
 
-subroutine populateStandard
+subroutine populateStandard(energyEigenValues)
 
    ! Import necessary modules.
    use O_Kinds
@@ -177,12 +180,15 @@ subroutine populateStandard
    use O_Constants,       only: smallThresh
    use O_SortSubs,        only: mergeSort
    use O_CommandLine,     only: excitedQN_n
-   use O_SecularEquation, only: energyEigenValues
+   !use O_SecularEquation, only: energyEigenValues
    use O_Input,           only: numStates, numElectrons
    use O_KPoints,         only: numKPoints, kPointWeight
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+
+   ! Defined passed parameters
+   real(kind=double), dimension(:) :: energyEigenValues
 
    ! Define the local variables used in this subroutine.
    integer :: i,j,k ! Loop index variables

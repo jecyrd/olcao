@@ -273,4 +273,130 @@ subroutine cleanUpSl(slctxt, desca, descb, descz)
 
 end subroutine cleanUpSl
 
+subroutine solvePZHEGVX(vvArr,vvOLArr,eVals,blcsinfo)
+
+   use O_Kinds
+   use O_Parallel
+   use O_SCALAPACKPZHEGVX
+
+   ! Make sure no funny varaibles are defined
+   implicit none
+
+   ! Define passed Parameters
+   type(ArrayInfo), intent(inout) :: vvArr
+   type(ArrayInfo), intent(inout) :: vvOLArr
+   type(ArrayInfo), intent(inout) :: eVals
+   type(BlacsInfo), intent(in) :: blcsinfo
+
+   ! Define local input variables
+   real(kind=double) :: VL,VU
+   integer :: IL, IU
+   real(kind=double) :: ABSTOL
+   real(kind=double) :: ORFAC
+
+   ! Define local output variables
+   integer :: M, NZ
+   real(kind=double), dimension(vvInfo%I) :: W
+   complex(kind=double), dimension(vvInfo%I,vvInfo%I) :: Z
+
+   ! Define local work variables
+   complex(kind=double) :: WORK
+   integer   :: LWORK
+   real(kind=double), allocatable, dimension(:) :: RWORK
+   integer   :: LRWORK
+   integer, allocatable, dimension(:) :: IWORK
+   integer   :: LIWORK
+
+   ! Define other local variables
+   integer, dimension(vvInfo%I) :: IFAIL
+   integer, dimension(2*blcsinfo%prows*blcsinfo%pcols) :: ICLUSTR
+   real(kind=double), dimension(blcsinfo%prows*blcsinfo%pcols) :: GAP
+   integer   :: INFO
+
+   ! Define external functions
+   real(kind=double), external :: PDLAMCH
+   integer, external :: numroc
+
+   ! These are not referenced if RNGE='A'
+   VL = 0
+   VU = 0
+   IL = 0
+   IU = 0
+
+   ! Eigvenvalues will be computed most accurately when ABSTOL is set to twice
+   !   the underflow threshold 2*PDLAMCH('S') not zero.
+   ABSTOL = 2*PDLAMCH(blcsinfo%context,'S')
+
+   ! Global outputs, initializing to 0
+   M = 0
+   NZ = 0
+
+   ! Allocate space for eigenvectors and intitialize
+   allocate(W(vvInfo%I))
+   W(:) = 0.0_double
+
+   ! Specifies which eigenvectors should be reorthonalized. Eigenvectors
+   ! that correspond to eigenvalues which are within tol=ORFAC*norm(A) of 
+   ! each other are to be reorthogonalized.
+   ! I think this should be set to 10^-3, but we'll use 0 for now, and no
+   ! eigenvectors will be reorthogonalized.
+   ORFAC = 0
+
+   ! We will first call PZHEGVX with LWORK, LRWORK, and LIWORK specified as
+   ! -1. this will cause scalapack to do a workspace query and output the
+   ! optimal sizes of these parameters in the first index of the associated
+   ! arrays. We'll then reallocate to the correct sizes.
+   LWORK = -1
+   allocate(WORK(1))
+   WORK(:) = 0
+
+   LRWORK = -1
+   ALLOCATE(RWORK(1))
+   RWORK(:) = 0
+
+   LIWORK = 01
+   allocate(IWORK(1))
+   IWORK(:) = 0
+
+   ! Other outputs initializing to 0
+   IFAIL(:) = 0
+   ICLUSTER(:) = 0
+   GAP(:) = 0.0_double
+   INFO = 0
+
+   ! As stated above we call the PZHEGVX subroutine as a workspace query
+   call pzhegvx(1,'V','A','U',vvInfo%I,vvArr%local,1,1,vvArr%desc, &
+                                &  vvOLArr%local,1,1,vvOLArr%desc, &
+                                &  VL,VU,IL,IU,ABSTOL,M,NZ,W,ORFAC, &
+                                &  eVals%local,1,1,eVals%desc, &
+                                &  WORK,LWORK,RWORK,LRWORK,IWORK,LIWORK, &
+                                &  IFAIL, ICLUSTR, GAP, INFO)
+
+   ! Now we set the proper workspace parameters as needed, and resize.
+   LWORK = WORK(1)
+   LRWORK = RWORK(1)
+   LIWORK = IWORK(1)
+
+   deallocate(WORK)
+   deallocate(RWORK)
+   deallocate(IWORK)
+   allocate(WORK(LWORK))
+   allocate(RWORK(LRWORK))
+   allocate(IWORK(LIWORK))
+   WORK(:) = complex(0.0_double,0.0_double)
+   RWORK(:) = 0.0_double
+   IWORK(:) = 0
+
+   ! Now we have sufficient workspace for scalapack and can now call PZHEGVX
+   ! to actually solve our eigen problem.
+   call pzhegvx(1,'V','A','U',vvInfo%I,vvArr%local,1,1,vvArr%desc, &
+                                &  vvOLArr%local,1,1,vvOLArr%desc, &
+                                &  VL,VU,IL,IU,ABSTOL,M,NZ,W,ORFAC, &
+                                &  eVals%local,1,1,eVals%desc, &
+                                &  WORK,LWORK,RWORK,LRWORK,IWORK,LIWORK, &
+
+
+
+end subroutine solvePZHEGVX
+
 end module O_ParallelMain

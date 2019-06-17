@@ -250,13 +250,15 @@ subroutine readPackedMatrixAccum (datasetID,arrInfo,blcsInfo,multFactor)
    ! Import the precision variables and the type definitions.
    use O_Kinds
    use HDF5
+   use O_Parallel
+   use O_ParallelMain
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define the passed parameters.
    integer (hid_t) :: datasetID
-   type(ArrayInfo) :: arrInfo
+   type(mArrayInfo) :: arrInfo
    type(BlacsInfo) :: blcsinfo
    real (kind=double) :: multFactor
 
@@ -338,13 +340,14 @@ subroutine readPackedMatrix (datasetID,arrInfo,blcsinfo)
    use O_Kinds
    use HDF5
    use O_Parallel
+   use O_ParallelMain
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define the passed parameters.
    integer (hid_t) :: datasetID
-   type(ArrayInfo) :: arrInfo
+   type(mArrayInfo) :: arrInfo
    type(BlacsInfo) :: blcsinfo
 
    ! Define local variables

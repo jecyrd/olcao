@@ -58,7 +58,7 @@ subroutine setupSCF
    integer :: mpierr
 
    ! Define cvOL global array data structure, and blacs info data structure
-   type(ArrayInfo) :: cvOLArrayInfo
+   type(sArrayInfo) :: cvOLArrayInfo
    type(BlacsInfo) :: blcsinfo
 
    ! Define the linked list that will hold the list of atoms read in that

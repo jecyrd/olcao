@@ -28,7 +28,7 @@ module O_SetupHDF5
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initSetupHDF5 (maxNumRayPoints)
+subroutine initSetupHDF5 (maxNumRayPoints, blocksize)
 
    ! Use necessary modules.
    use O_TimeStamps
@@ -46,6 +46,7 @@ subroutine initSetupHDF5 (maxNumRayPoints)
 
    ! Define passed dummy variables.
    integer :: maxNumRayPoints
+   integer, dimension(2) :: blocksize
 
    ! Declare local variables.
    integer :: hdferr
@@ -78,7 +79,7 @@ subroutine initSetupHDF5 (maxNumRayPoints)
    ! Create the subgroups of the setup hdf5 file and define all their parts.
    !   This must be done in this order due to dependencies on potPot_dsid and
    !   others.
-   call initSetupIntegralHDF5 (setup_fid)
+   call initSetupIntegralHDF5 (setup_fid,blocksize)
    call initSetupElecStatHDF5 (setup_fid)
    call initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
 

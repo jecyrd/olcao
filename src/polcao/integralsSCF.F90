@@ -50,7 +50,7 @@ subroutine gaussOverlapOL(blcsinfo, cvOLArrayInfo, atomList)
    ! Define the passed parameters.
    type(AtomPair), pointer :: atomList
    type(BlacsInfo), intent(in) :: blcsinfo
-   type(ArrayInfo), intent(inout) :: cvOLArrayInfo
+   type(sArrayInfo), intent(inout) :: cvOLArrayInfo
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
@@ -119,8 +119,8 @@ subroutine gaussOverlapOL(blcsinfo, cvOLArrayInfo, atomList)
    integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
 
    ! Define variables for MPI, and distributed operations
-   type(ArrayInfo) :: vvArrayInfo
-   type(ArrayInfo) :: ccArrayInfo
+   type(sArrayInfo) :: vvArrayInfo
+   type(sArrayInfo) :: ccArrayInfo
    type(AtomPair), pointer :: currAtomPair => null()
 
    ! Record the beginning of this phase of the setup calculation.
@@ -478,7 +478,7 @@ subroutine gaussOverlapKE(blcsinfo, cvOLArrayInfo, atomList)
    ! Define passed parameters.
    type(AtomPair), pointer :: atomList
    type(BlacsInfo), intent(in) :: BlcsInfo
-   type(ArrayInfo), intent(inout) :: cvOLArrayInfo
+   type(sArrayInfo), intent(inout) :: cvOLArrayInfo
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
@@ -547,9 +547,9 @@ subroutine gaussOverlapKE(blcsinfo, cvOLArrayInfo, atomList)
    integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
 
    ! Define variables for MPI, and distributed operations
-   type(ArrayInfo) :: vvArrayInfo
-   type(ArrayInfo) :: cvArrayInfo
-   type(ArrayInfo) :: ccArrayInfo
+   type(sArrayInfo) :: vvArrayInfo
+   type(sArrayInfo) :: cvArrayInfo
+   type(sArrayInfo) :: ccArrayInfo
    type(AtomPair), pointer :: currAtomPair => null()
 
    ! Record the beginning of this phase of the setup calculation.
@@ -899,7 +899,7 @@ subroutine gaussOverlapNP(blcsinfo, cvOLArrayInfo, atomList)
    ! Define passed parameters.
    type(AtomPair), pointer :: atomList
    type(BlacsInfo), intent(in) :: blcsinfo
-   type(ArrayInfo), intent(inout) :: cvOLArrayInfo
+   type(sArrayInfo), intent(inout) :: cvOLArrayInfo
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
@@ -964,9 +964,9 @@ subroutine gaussOverlapNP(blcsinfo, cvOLArrayInfo, atomList)
          ! lattice points will be considered for integration.
 
    ! Define variables for MPI, and distributed operations
-   type(ArrayInfo) :: vvArrayInfo
-   type(ArrayInfo) :: cvArrayInfo
-   type(ArrayInfo) :: ccArrayInfo
+   type(sArrayInfo) :: vvArrayInfo
+   type(sArrayInfo) :: cvArrayInfo
+   type(sArrayInfo) :: ccArrayInfo
    type(AtomPair), pointer :: currAtomPair => null()
 
    ! Record the beginning of this phase of the setup calculation.
@@ -1312,7 +1312,7 @@ subroutine gaussOverlapEP(blcsInfo,cvOLArrayInfo, atomList, &
    ! Define the passed parameters.
    type(AtomPair), pointer :: atomList
    type(BlacsInfo), intent(in) :: blcsinfo
-   type(ArrayInfo), intent(inout) :: cvOLArrayInfo
+   type(sArrayInfo), intent(inout) :: cvOLArrayInfo
    integer, intent(in) :: potDim
    integer, intent(in) :: currPotNumber
    integer, intent(in) :: currPotElement
@@ -1390,9 +1390,9 @@ subroutine gaussOverlapEP(blcsInfo,cvOLArrayInfo, atomList, &
          ! lattice points will be considered for integration.
 
    ! Define varible for MPI, and distributed operations
-   type(ArrayInfo) :: vvArrayInfo
-   type(ArrayInfo) :: cvArrayInfo
-   type(ArrayInfo) :: ccArrayInfo
+   type(sArrayInfo) :: vvArrayInfo
+   type(sArrayInfo) :: cvArrayInfo
+   type(sArrayInfo) :: ccArrayInfo
    type(AtomPair), pointer :: currAtomPair => null()
 
    ! Allocate space for locally defined allocatable arrays
@@ -1747,7 +1747,7 @@ subroutine elecPotGaussOverlap(blcsinfo,cvOLArrayInfo,atomList)
 
    ! Define the passed parameters
    type(BlacsInfo) :: blcsinfo
-   type(ArrayInfo) :: cvOLArrayInfo
+   type(sArrayInfo) :: cvOLArrayInfo
    type(AtomPair), pointer :: atomList
 
    ! Define local variables.
@@ -2252,7 +2252,7 @@ subroutine orthoOL(vvInfo,ccInfo,cvOLInfo,blcsinfo,potDim)
    implicit none
 
    ! Define passed variables
-   type(ArrayInfo), intent(inout) :: vvInfo, ccInfo, cvOLInfo
+   type(sArrayInfo), intent(inout) :: vvInfo, ccInfo, cvOLInfo
    type(BlacsInfo), intent(in) :: blcsinfo
    integer, intent(in) :: potDim
 
@@ -2261,9 +2261,9 @@ subroutine orthoOL(vvInfo,ccInfo,cvOLInfo,blcsinfo,potDim)
    integer :: hdferr
    integer :: currIndex
    integer, dimension(MPI_STATUS_SIZE) :: mpistatus
-   type(ArrayInfo) :: vcTempInfo
-   type(ArrayInfo) :: vcInfo
-   type(ArrayInfo) :: tArrInfo
+   type(sArrayInfo) :: vcTempInfo
+   type(sArrayInfo) :: vcInfo
+   type(sArrayInfo) :: tArrInfo
    type(BlacsInfo) :: tBlcsInfo
    integer :: dcount, mpidtype, mpierr
    integer, dimension(7) :: sdata
@@ -2419,7 +2419,7 @@ subroutine ortho (opCode,vvInfo,ccInfo,cvInfo,cvOLInfo,blcsInfo,potDim, &
 
    ! Define passed dummy arguments.
    integer, intent(in) :: opCode
-   type(ArrayInfo), intent(inout) :: vvInfo, ccInfo, cvInfo, cvOLInfo
+   type(sArrayInfo), intent(inout) :: vvInfo, ccInfo, cvInfo, cvOLInfo
    type(BlacsInfo), intent(in) :: blcsinfo
    integer, intent(in) :: potDim
    integer, intent(in) :: currPotTypeNumber
@@ -2430,9 +2430,9 @@ subroutine ortho (opCode,vvInfo,ccInfo,cvInfo,cvOLInfo,blcsInfo,potDim, &
    integer :: hdferr
    integer :: currIndex
    integer, dimension(MPI_STATUS_SIZE) :: mpistatus
-   type(ArrayInfo) :: vcTempInfo
-   type(ArrayInfo) :: vcInfo
-   type(ArrayInfo) :: tArrInfo
+   type(sArrayInfo) :: vcTempInfo
+   type(sArrayInfo) :: vcInfo
+   type(sArrayInfo) :: tArrInfo
    type(BlacsInfo) :: tBlcsInfo 
    integer :: dcount, mpidtype, mpierr
    integer, dimension(7) :: sdata

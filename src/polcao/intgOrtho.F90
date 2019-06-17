@@ -218,7 +218,8 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo,vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Parallel, only: ArrayInfo
+   use O_Parallel
+   use O_ParallelSetup
    use pzherkInterface
    use MPI
 
@@ -228,8 +229,8 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,cvOLInfo,vvInfo, kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim ! N
    integer, intent(in) :: coreDim ! K
-   type(ArrayInfo), intent(inout) :: vvInfo
-   type(ArrayInfo), intent(inout) :: cvOLInfo
+   type(sArrayInfo), intent(inout) :: vvInfo
+   type(sArrayInfo), intent(inout) :: cvOLInfo
    integer, intent(in) :: kp
 
    ! Do a rank 1 update. That is: C := alpha*A**H*A + beta*C where H equals
@@ -263,7 +264,8 @@ subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo,kp)
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Parallel, only: ArrayInfo
+   use O_Parallel
+   use O_ParallelSetup
    use pzher2kInterface
    use MPI
 
@@ -273,9 +275,9 @@ subroutine valeCoreCoreVale (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo,kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim ! N
    integer, intent(in) :: coreDim ! K
-   type(ArrayInfo), intent(inout) :: vvInfo
-   type(ArrayInfo), intent(inout) :: cvInfo
-   type(ArrayInfo), intent(inout) :: cvOLInfo
+   type(sArrayInfo), intent(inout) :: vvInfo
+   type(sArrayInfo), intent(inout) :: cvInfo
+   type(sArrayInfo), intent(inout) :: cvOLInfo
    integer, intent(in) :: kp
 
    call pzher2k('U','C',valeDim,coreDim,(-1.0_double,0.0_double),&
@@ -298,7 +300,8 @@ subroutine valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo,kp)
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Parallel, only: ArrayInfo
+   use O_Parallel
+   use O_ParallelSetup
    use pzhemmInterface
    use MPI
 
@@ -308,9 +311,9 @@ subroutine valeCoreCoreCore (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo,kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim ! M
    integer, intent(in) :: coreDim ! N
-   type(ArrayInfo), intent(inout) :: vcInfo
-   type(ArrayInfo), intent(inout) :: ccInfo
-   type(ArrayInfo), intent(inout) :: vcTempInfo
+   type(sArrayInfo), intent(inout) :: vcInfo
+   type(sArrayInfo), intent(inout) :: ccInfo
+   type(sArrayInfo), intent(inout) :: vcTempInfo
    integer, intent(in) :: kp
 
    ! Note that localVC_temp is the resultant matrix.
@@ -329,7 +332,8 @@ subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo,kp)
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Parallel, only: ArrayInfo
+   use O_Parallel
+   use O_ParallelSetup
    use pzgemmInterface
    use MPI
 
@@ -339,9 +343,9 @@ subroutine makeValeVale (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo,kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim
    integer, intent(in) :: coreDim
-   type(ArrayInfo), intent(inout) :: vcTempInfo
-   type(ArrayInfo), intent(inout) :: cvInfo
-   type(ArrayInfo), intent(inout) :: vvInfo
+   type(sArrayInfo), intent(inout) :: vcTempInfo
+   type(sArrayInfo), intent(inout) :: cvInfo
+   type(sArrayInfo), intent(inout) :: vvInfo
    integer, intent(in) :: kp
 
    ! Define loop control variables
@@ -390,7 +394,8 @@ subroutine valeCoreCoreValeOLGamma (valeDim,coreDim,cvOLInfo,vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Parallel, only: gArrayInfo
+   use O_Parallel
+   use O_ParallelSetup
    use pdsyrkInterface
    use MPI
 
@@ -400,8 +405,8 @@ subroutine valeCoreCoreValeOLGamma (valeDim,coreDim,cvOLInfo,vvInfo, kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim ! N
    integer, intent(in) :: coreDim ! K
-   type(ArrayInfo), intent(inout) :: vvInfo
-   type(ArrayInfo), intent(inout) :: cvOLInfo
+   type(sArrayInfo), intent(inout) :: vvInfo
+   type(sArrayInfo), intent(inout) :: cvOLInfo
    integer, intent(in) :: kp
 
    ! Do a rank 1 update. That is: C := alpha*A**T*A + beta*C where T equals
@@ -431,7 +436,8 @@ subroutine valeCoreCoreValeGamma (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Parallel, only: gArrayInfo
+   use O_Parallel
+   use O_ParallelSetup
    use pdsyr2kInterface
    use MPI
 
@@ -441,9 +447,9 @@ subroutine valeCoreCoreValeGamma (valeDim,coreDim,cvOLInfo,cvInfo,vvInfo, kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim ! N
    integer, intent(in) :: coreDim ! K
-   type(ArrayInfo), intent(inout) :: vvInfo
-   type(ArrayInfo), intent(inout) :: cvInfo
-   type(ArrayInfo), intent(inout) :: cvOLInfo
+   type(sArrayInfo), intent(inout) :: vvInfo
+   type(sArrayInfo), intent(inout) :: cvInfo
+   type(sArrayInfo), intent(inout) :: cvOLInfo
    integer, intent(in) :: kp
 
    !call pdsyr2k('U','T',valeDim,coreDim,-1.0_double,localCV_OL,0,0,&
@@ -473,7 +479,8 @@ subroutine valeCoreCoreCoreGamma (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Parallel, only: gArrayInfo
+   use O_Parallel
+   use O_ParallelSetup
    use pdsymmInterface
    use MPI
 
@@ -483,9 +490,9 @@ subroutine valeCoreCoreCoreGamma (valeDim,coreDim,vcInfo,ccInfo,vcTempInfo, kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim ! M
    integer, intent(in) :: coreDim ! N
-   type(ArrayInfo), intent(inout) :: vcInfo
-   type(ArrayInfo), intent(inout) :: ccInfo
-   type(ArrayInfo), intent(inout) :: vcTempInfo
+   type(sArrayInfo), intent(inout) :: vcInfo
+   type(sArrayInfo), intent(inout) :: ccInfo
+   type(sArrayInfo), intent(inout) :: vcTempInfo
    integer, intent(in) :: kp
 
    ! Note that localVC_temp is the resultant matrix.
@@ -506,7 +513,8 @@ subroutine makeValeValeGamma (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo, kp)
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Parallel, only: gArrayInfo
+   use O_Parallel
+   use O_ParallelSetup
    use pdgemmInterface
    use MPI
 
@@ -516,9 +524,9 @@ subroutine makeValeValeGamma (valeDim,coreDim,vcTempInfo,cvInfo,vvInfo, kp)
    ! Define passed parameters
    integer, intent(in) :: valeDim
    integer, intent(in) :: coreDim
-   type(ArrayInfo), intent(inout) :: vcTempInfo
-   type(ArrayInfo), intent(inout) :: cvInfo
-   type(ArrayInfo), intent(inout) :: vvInfo
+   type(sArrayInfo), intent(inout) :: vcTempInfo
+   type(sArrayInfo), intent(inout) :: cvInfo
+   type(sArrayInfo), intent(inout) :: vvInfo
    integer, intent(in) :: kp
 
    ! Define loop control variables

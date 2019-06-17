@@ -170,6 +170,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsinfo, vvInfo, &
    use O_Kinds
    
    use O_Parallel
+   use O_ParallelSetup
 
    ! Import the necessary data modules
    use O_KPoints, only: numKPoints
@@ -185,7 +186,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair, blcsinfo, vvInfo, &
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
          & numKPoints), intent(inout) :: currentPair
    type(BlacsInfo), intent(in) :: blcsinfo
-   type(ArrayInfo), intent(inout) :: vvInfo, ccInfo, cvInfo
+   type(sArrayInfo), intent(inout) :: vvInfo, ccInfo, cvInfo
 
    ! Define the matrix necessary for quickly accessing the complex conjugate
    !   of the currentPair.
@@ -292,7 +293,7 @@ subroutine atomAtomSaving(stateIndex, stateNum, cpair, localArr, blcsinfo)
    integer, dimension (2), intent(in) :: stateIndex
    integer, dimension (2), intent(in) :: stateNum
    complex (kind=double), dimension(:,:,:), intent(in) :: cpair
-   type(ArrayInfo), intent(inout) :: localArr
+   type(sArrayInfo), intent(inout) :: localArr
    type(BlacsInfo), intent(in) :: blcsinfo
 
    ! Define local variables

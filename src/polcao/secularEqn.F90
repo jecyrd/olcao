@@ -62,7 +62,7 @@ subroutine secularEqnAllKP(spinDirection, numStates, vvArr, vvOLArr, eVals, &
    ! Define the passed parameters.
    integer :: spinDirection
    integer :: numStates
-   type(ArrayInfo) :: vvArr, vvOLArr, eVals
+   type(mArrayInfo) :: vvArr, vvOLArr, eVals
    type(BlacsInfo) :: blcsinfo
 
    ! Define the local variables used in this subroutine.
@@ -158,12 +158,14 @@ subroutine secularEqnAllKP(spinDirection, numStates, vvArr, vvOLArr, eVals, &
 
       ! Solve the eigen problem with a LAPACK routine.
 #ifndef GAMMA
-      call solveZHEGV(vvArr,vvOLArr,eVals,blcsinfo)
+      call solvePZHEGV(vvArr,vvOLArr,eVals,blcsinfo)
 #else
       call solveDSYGV(valeDim,numStates,valeValeGamma(:,:,spinDirection),&
             & valeValeOLGamma(:,:,1),energyEigenValues(:,i,spinDirection))
 #endif
 
+      call reduceEigenValues(blcsinfo, eVals, allEigenValues)
+      call writeEigenValues()
       ! Write the energy eigenValues onto disk in HDF5 format in a.u.
       !call h5dwrite_f (eigenValues_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
       !      & energyEigenValues(:,i,spinDirection),states,hdferr)
